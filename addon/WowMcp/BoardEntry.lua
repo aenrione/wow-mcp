@@ -36,7 +36,9 @@ function BoardEntry.reset()
 end
 
 -- Clickable item link text; the client is asked to load the item data so its name resolves next refresh.
--- Quality colour of an item (green default so a reference always reads as a clickable item).
+-- Quality colour of an item as a bare AARRGGBB hex (green default so a reference always reads as a
+-- clickable item). ITEM_QUALITY_COLORS[q].hex on this client already carries a "|c" prefix, so strip
+-- any escape and keep only the 8 hex digits.
 local function itemHex(itemID)
     local get = _G.GetItemInfo or (_G.C_Item and _G.C_Item.GetItemInfo)
     local quality
@@ -46,7 +48,8 @@ local function itemHex(itemID)
     end
     local qc = _G.ITEM_QUALITY_COLORS
     if quality and qc and qc[quality] and type(qc[quality].hex) == "string" then
-        return qc[quality].hex
+        local hex = qc[quality].hex:match("(%x%x%x%x%x%x%x%x)")
+        if hex then return hex end
     end
     return "ff40d050"
 end
