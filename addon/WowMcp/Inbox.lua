@@ -25,7 +25,7 @@ local MAX_HANDLED = 200
 local MAX_ID = 2 ^ 31   -- request ids must fit 32-bit Lua integers
 
 local slotCount, nextSlot = 0, 1
-local lastPoll, aliveSince, lastInboxAt, lastError
+local lastPoll, aliveSince, lastInboxAt, lastError, lastWaypoint
 local started, warnedSlots = false, false
 local waypointUids = {} -- request id -> TomTom waypoint uid, for clearwaypoints
 
@@ -65,12 +65,19 @@ end
 
 local function addWaypoint(req)
     local tomtom = _G.TomTom
-    if type(tomtom) ~= "table" or type(tomtom.AddWaypoint) ~= "function" then return end
+    if type(tomtom) ~= "table" or type(tomtom.AddWaypoint) ~= "function" then
+        lastWaypoint = "TomTom not loaded"
+        return
+    end
     local mapID, x, y = tonumber(req.mapID), tonumber(req.x), tonumber(req.y)
-    if not (mapID and x and y) then return end
+    if not (mapID and x and y) then
+        lastWaypoint = "bad coords"
+        return
+    end
     local title = type(req.title) == "string" and req.title or "WowMcp"
     local ok, uid = pcall(tomtom.AddWaypoint, tomtom, mapID, x / 100, y / 100,
         { title = title, from = "WowMcp", crazy = true })
+    lastWaypoint = ("map=%d ok=%s"):format(mapID, tostring(ok))
     if ok and uid ~= nil then waypointUids[req.id] = uid end
 end
 
@@ -192,6 +199,7 @@ local function collect()
         lastInboxAt = lastInboxAt,
         handledCount = handled and #handled or 0,
         lastError = lastError,
+        lastWaypoint = lastWaypoint,
         lastRefreshAt = refresh.lastRefreshAt,
         lastRefreshSkipped = refresh.lastRefreshSkipped,
         lastSendOk = refresh.lastSendOk,

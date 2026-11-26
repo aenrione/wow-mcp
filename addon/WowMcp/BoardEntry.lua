@@ -130,22 +130,26 @@ local function countSuffix(itemID)
     local ok, n = pcall(get, itemID)
     if not ok or type(n) ~= "number" then return "" end
     local color = n > 0 and "ffe6cc80" or "ff6a6a6a"
-    return (" |c%s\195\151%d|r"):format(color, n)
+    return (" |c%sx%d|r"):format(color, n)
 end
 
 local formatMoney = ns.BoardMoney.format
 
--- Texture of an item's icon, for the row's left gutter.
+-- Texture of an item's icon, for the row's left gutter. A valid icon is a positive fileID or a texture path.
+local function validTexture(v)
+    if type(v) == "number" then return v > 0 end
+    return type(v) == "string" and v ~= ""
+end
 local function itemIcon(itemID)
-    local get = _G.GetItemIcon
-    if type(get) == "function" then
-        local ok, tex = pcall(get, itemID)
-        if ok and tex then return tex end
-    end
     local inst = _G.GetItemInfoInstant or (_G.C_Item and _G.C_Item.GetItemInfoInstant)
     if type(inst) == "function" then
         local ok, _, _, _, _, icon = pcall(inst, itemID)
-        if ok and icon then return icon end
+        if ok and validTexture(icon) then return icon end
+    end
+    local get = _G.GetItemIcon or (_G.C_Item and _G.C_Item.GetItemIconByID)
+    if type(get) == "function" then
+        local ok, tex = pcall(get, itemID)
+        if ok and validTexture(tex) then return tex end
     end
     return nil
 end
@@ -153,8 +157,8 @@ end
 -- A coloured progress tag for an entry's inventory goal: "sell 7 left", "bank 10/25", "collect 3/25".
 local function goalTag(entry)
     local g = entry.goal
-    if type(g) ~= "table" or type(ns.Board) ~= "table" or type(ns.Board.goalState) ~= "function" then return nil end
-    local done, have, target = ns.Board.goalState(g)
+    if type(g) ~= "table" or type(ns.BoardGoals) ~= "table" or type(ns.BoardGoals.state) ~= "function" then return nil end
+    local done, have, target = ns.BoardGoals.state(g)
     if done == nil then return nil end
     local label
     if g.mode == "sell" then

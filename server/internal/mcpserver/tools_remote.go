@@ -121,7 +121,7 @@ func (s *service) remoteTools() []tool {
 				if err := checkCoords(a.MapID, a.X, a.Y); err != nil {
 					return "", nil, err
 				}
-				fields := map[string]any{"map": a.MapID, "x": a.X, "y": a.Y}
+				fields := map[string]any{"mapID": a.MapID, "x": a.X, "y": a.Y}
 				if a.Title != "" {
 					fields["title"] = a.Title
 				}
@@ -141,7 +141,7 @@ func (s *service) remoteTools() []tool {
 				if err := checkCoords(a.MapID, a.X, a.Y); err != nil {
 					return "", nil, err
 				}
-				return "focus", map[string]any{"map": a.MapID, "x": a.X, "y": a.Y}, nil
+				return "focus", map[string]any{"mapID": a.MapID, "x": a.X, "y": a.Y}, nil
 			}),
 
 		requestTool(s, "wow_waypoints_clear", "Clear TomTom waypoints",
