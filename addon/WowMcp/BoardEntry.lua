@@ -48,8 +48,8 @@ local function itemHex(itemID)
     end
     local qc = _G.ITEM_QUALITY_COLORS
     if quality and qc and qc[quality] and type(qc[quality].hex) == "string" then
-        local hex = qc[quality].hex:match("(%x%x%x%x%x%x%x%x)")
-        if hex then return hex end
+        local hex = qc[quality].hex:gsub("|c", ""):gsub("|r", "")
+        if hex:match("^%x%x%x%x%x%x%x%x$") then return hex end
     end
     return "ff40d050"
 end
