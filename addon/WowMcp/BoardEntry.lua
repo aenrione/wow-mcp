@@ -169,16 +169,67 @@ local function formatMoney(text)
 end
 BoardEntry.formatMoney = formatMoney
 
-local function bodyText(entry)
-    local parts = {}
-    if type(entry.body) == "string" and entry.body ~= "" then parts[#parts + 1] = formatMoney(entry.body) end
-    local links = {}
+-- Texture of an item's icon, for the row's left gutter.
+local function itemIcon(itemID)
+    local get = _G.GetItemIcon
+    if type(get) == "function" then
+        local ok, tex = pcall(get, itemID)
+        if ok and tex then return tex end
+    end
+    local inst = _G.GetItemInfoInstant or (_G.C_Item and _G.C_Item.GetItemInfoInstant)
+    if type(inst) == "function" then
+        local ok, _, _, _, _, icon = pcall(inst, itemID)
+        if ok and icon then return icon end
+    end
+    return nil
+end
+
+-- Resolves an entry's items into { id, name, token (link + ×N), icon }, capped at MAX_ITEMS_SHOWN.
+local function resolveItems(entry)
+    local out = {}
     for i, itemID in ipairs(type(entry.items) == "table" and entry.items or {}) do
         if i > MAX_ITEMS_SHOWN then break end
-        local link = BoardEntry.itemLink(itemID)
-        if link then links[#links + 1] = link .. countSuffix(itemID) end
+        local id = tonumber(itemID)
+        local link = id and BoardEntry.itemLink(id)
+        if link then
+            local name = firstValue({ "C_Item.GetItemInfo", "GetItemInfo" }, id)
+            out[#out + 1] = {
+                id = id,
+                name = type(name) == "string" and name ~= "" and name or nil,
+                token = link .. countSuffix(id),
+                icon = itemIcon(id),
+            }
+        end
     end
-    if #links > 0 then parts[#parts + 1] = table.concat(links, " ") end
+    return out
+end
+
+-- Replaces the first plain-text occurrence of name with token; reopen re-applies a colour after the
+-- token's own |r so the surrounding text keeps its colour. Returns the new text and whether it matched.
+local function replaceInline(text, name, token, reopen)
+    if type(text) ~= "string" or type(name) ~= "string" or name == "" then return text, false end
+    local s, e = text:find(name, 1, true)
+    if not s then return text, false end
+    return text:sub(1, s - 1) .. token .. (reopen or "") .. text:sub(e + 1), true
+end
+
+-- Builds the body: the entry body with any item not already shown in the title placed inline (or appended),
+-- then the waypoint link. placed[i] marks items the title already consumed.
+local function buildBody(entry, items, placed)
+    local body = formatMoney(type(entry.body) == "string" and entry.body or "")
+    for i, it in ipairs(items) do
+        if not placed[i] and it.name then
+            local nb, ok = replaceInline(body, it.name, it.token, "")
+            if ok then body = nb; placed[i] = true end
+        end
+    end
+    local extra = {}
+    for i, it in ipairs(items) do
+        if not placed[i] then extra[#extra + 1] = it.token end
+    end
+    local parts = {}
+    if body ~= "" then parts[#parts + 1] = body end
+    if #extra > 0 then parts[#parts + 1] = table.concat(extra, " ") end
     local coord = BoardEntry.coordLink(entry.coords)
     if coord then
         local title = type(entry.coords) == "table" and plain(entry.coords.title)
@@ -203,13 +254,17 @@ local function makeRow(child)
     row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
     if row.check.SetSize then row.check:SetSize(18, 18) end
     row.check:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+    row.icon = row:CreateTexture(nil, "ARTWORK")
+    row.icon:SetSize(16, 16)
+    row.icon:SetPoint("TOPLEFT", row, "TOPLEFT", 1, -1)
+    row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     row.title = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    row.title:SetPoint("TOPLEFT", row, "TOPLEFT", 22, -1)
-    row.title:SetWidth(ROW_WIDTH - 24)
+    row.title:SetPoint("TOPLEFT", row, "TOPLEFT", 20, -1)
+    row.title:SetWidth(ROW_WIDTH - 22)
     row.title:SetJustifyH("LEFT")
     row.body = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.body:SetPoint("TOPLEFT", row.title, "BOTTOMLEFT", 0, -2)
-    row.body:SetWidth(ROW_WIDTH - 24)
+    row.body:SetWidth(ROW_WIDTH - 22)
     row.body:SetJustifyH("LEFT")
     if row.body.SetWordWrap then row.body:SetWordWrap(true) end
     return row
@@ -251,18 +306,35 @@ function BoardEntry.draw(child, entry, yOffset)
     local c = colorOf(entry.category)
     row.accent:SetColorTexture(c.r, c.g, c.b, entry.done and 0.25 or 0.9)
     row.stripe:SetShown(rowUsed % 2 == 0)
+    local items = resolveItems(entry)
+    local primaryIcon = items[1] and items[1].icon
     if entry.category == "task" then
         row.check:Show()
         row.check:SetChecked(entry.done and true or false)
         row.check:SetScript("OnClick", function(self)
             ns.Board.setDone(entry.id, self:GetChecked() and true or false)
         end)
+        row.icon:Hide()
+    elseif primaryIcon then
+        row.check:Hide()
+        row.icon:SetTexture(primaryIcon)
+        row.icon:SetDesaturated(entry.done and true or false)
+        row.icon:Show()
     else
         row.check:Hide()
+        row.icon:Hide()
     end
     local mark = entry.done and "|cff888888" or "|cffffd200"
-    row.title:SetText(mark .. formatMoney(type(entry.title) == "string" and entry.title or "(untitled)") .. "|r")
-    local body = bodyText(entry)
+    local placed = {}
+    local titleText = formatMoney(type(entry.title) == "string" and entry.title or "(untitled)")
+    for i, it in ipairs(items) do
+        if it.name then
+            local nt, ok = replaceInline(titleText, it.name, it.token, mark)
+            if ok then titleText = nt; placed[i] = true end
+        end
+    end
+    row.title:SetText(mark .. titleText .. "|r")
+    local body = buildBody(entry, items, placed)
     row.body:SetText(body)
     row.body:SetShown(body ~= "")
     row:Show()

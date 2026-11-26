@@ -231,6 +231,13 @@ local function addChrome(f)
         Store.settings().boardHidden = true
         chat("Board hidden. /mcp board shows it again.")
     end)
+    local collapse = CreateFrame("Button", nil, f)
+    collapse:SetSize(24, 24)
+    collapse:SetPoint("RIGHT", close, "LEFT", 2, 0)
+    collapse:SetNormalFontObject("GameFontNormalLarge")
+    collapse:SetText("-")
+    collapse:SetScript("OnClick", function() Board.setCollapsed(not Store.settings().boardCollapsed) end)
+    f.collapseBtn = collapse
     local clear = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     clear:SetSize(110, 20)
     clear:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 8)
@@ -257,6 +264,26 @@ local function addChrome(f)
     end)
     save:SetScript("OnLeave", function() GameTooltip:Hide() end)
     f.titleText = title
+    f.clearBtn, f.saveBtn = clear, save
+end
+
+-- Collapsed: hide the list and bottom buttons, shrink to the title bar; the collapse button flips to "+".
+function Board.setCollapsed(collapsed)
+    Store.settings().boardCollapsed = collapsed or nil
+    if not board then return end
+    if collapsed then
+        if board.scroll then board.scroll:Hide() end
+        if board.clearBtn then board.clearBtn:Hide() end
+        if board.saveBtn then board.saveBtn:Hide() end
+        board:SetHeight(30)
+    else
+        if board.scroll then board.scroll:Show() end
+        if board.clearBtn then board.clearBtn:Show() end
+        if board.saveBtn then board.saveBtn:Show() end
+        board:SetHeight(board.fullHeight or 360)
+        Board.refresh()
+    end
+    if board.collapseBtn then board.collapseBtn:SetText(collapsed and "+" or "-") end
 end
 
 local function addScroll(f)
@@ -309,6 +336,7 @@ function Board.create()
     if not (CreateFrame and UIParent) then return nil end
     local f = CreateFrame("Frame", "WowMcpBoard", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
     f:SetSize(280, 360)
+    f.fullHeight = 360
     placeFrame(f)
     f:SetFrameStrata("MEDIUM")
     makeDraggable(f)
@@ -327,6 +355,7 @@ function Board.create()
         end)
     end
     Board.refresh()
+    if Store.settings().boardCollapsed then Board.setCollapsed(true) end
     return f
 end
 
