@@ -21,6 +21,7 @@ local MAX_SECTION_ENTRIES = 40
 local CATEGORIES = { "sell", "task", "route", "note" }
 
 local board
+local boardEventsOn = false
 
 local sectionRegistered = false
 
@@ -317,6 +318,14 @@ function Board.create()
     f:SetScript("OnShow", Board.refresh)
     f:Hide()
     board = f
+    -- Live reactivity: when the bags change, redraw the open board so item counts (×N) track what the
+    -- player holds, like RXP's to-do list. Registered lazily here so the dump fixtures stay unchanged.
+    if ns.Events and not boardEventsOn then
+        boardEventsOn = true
+        ns.Events.on("BAG_UPDATE_DELAYED", function()
+            if board and board:IsShown() then Board.refresh() end
+        end)
+    end
     Board.refresh()
     return f
 end

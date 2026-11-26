@@ -105,6 +105,16 @@ function BoardEntry.install(child)
 end
 
 -- The body text of an entry: its body line, then its item links and its coordinate link.
+-- Live count of an item the player currently holds, so a "sell"/"collect" entry reacts to the bags.
+local function countSuffix(itemID)
+    local get = _G.GetItemCount
+    if type(get) ~= "function" then return "" end
+    local ok, n = pcall(get, itemID)
+    if not ok or type(n) ~= "number" then return "" end
+    local color = n > 0 and "ffe6cc80" or "ff6a6a6a"
+    return (" |c%s\195\151%d|r"):format(color, n)
+end
+
 local function bodyText(entry)
     local parts = {}
     if type(entry.body) == "string" and entry.body ~= "" then parts[#parts + 1] = entry.body end
@@ -112,7 +122,7 @@ local function bodyText(entry)
     for i, itemID in ipairs(type(entry.items) == "table" and entry.items or {}) do
         if i > MAX_ITEMS_SHOWN then break end
         local link = BoardEntry.itemLink(itemID)
-        if link then links[#links + 1] = link end
+        if link then links[#links + 1] = link .. countSuffix(itemID) end
     end
     if #links > 0 then parts[#parts + 1] = table.concat(links, " ") end
     local coord = BoardEntry.coordLink(entry.coords)
