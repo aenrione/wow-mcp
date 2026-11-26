@@ -115,9 +115,43 @@ local function countSuffix(itemID)
     return (" |c%s\195\151%d|r"):format(color, n)
 end
 
+-- Renders a copper amount with the client's coin textures, falling back to coloured g/s/c text.
+local function toCoin(copper)
+    local f = _G.GetCoinTextureString
+    if type(f) == "function" then
+        local ok, s = pcall(f, copper)
+        if ok and type(s) == "string" and s ~= "" then return s end
+    end
+    local g, s, c = math.floor(copper / 10000), math.floor((copper % 10000) / 100), copper % 100
+    local out = {}
+    if g > 0 then out[#out + 1] = "|cffffd700" .. g .. "g|r" end
+    if s > 0 then out[#out + 1] = "|cffc7c7cf" .. s .. "s|r" end
+    if c > 0 or #out == 0 then out[#out + 1] = "|cffeda55f" .. c .. "c|r" end
+    return table.concat(out)
+end
+
+-- Rewrites money expressions (1g66s50c, 9s73, 65s, 1s30, ...) into coin strings; two-part forms first so
+-- "9s73" reads as 9 silver 73 copper, not just "9 silver". Applied only to plain text, never to links.
+local function formatMoney(text)
+    if type(text) ~= "string" or text == "" then return text end
+    -- Only when the coin textures are available: their |T...|t output can't be re-matched by the passes below,
+    -- unlike a coloured-text fallback, so money is never double-processed.
+    if type(_G.GetCoinTextureString) ~= "function" then return text end
+    text = text:gsub("(%d+)g(%d+)s(%d+)c", function(g, s, c) return toCoin(g * 10000 + s * 100 + c) end)
+    text = text:gsub("(%d+)g(%d+)s", function(g, s) return toCoin(g * 10000 + s * 100) end)
+    text = text:gsub("(%d+)s(%d+)c", function(s, c) return toCoin(s * 100 + c) end)
+    text = text:gsub("(%d+)g(%d+)", function(g, s) return toCoin(g * 10000 + s * 100) end)
+    text = text:gsub("(%d+)s(%d+)", function(s, c) return toCoin(s * 100 + c) end)
+    text = text:gsub("(%d+)g", function(g) return toCoin(g * 10000) end)
+    text = text:gsub("(%d+)s", function(s) return toCoin(s * 100) end)
+    text = text:gsub("(%d+)c", function(c) return toCoin(tonumber(c)) end)
+    return text
+end
+BoardEntry.formatMoney = formatMoney
+
 local function bodyText(entry)
     local parts = {}
-    if type(entry.body) == "string" and entry.body ~= "" then parts[#parts + 1] = entry.body end
+    if type(entry.body) == "string" and entry.body ~= "" then parts[#parts + 1] = formatMoney(entry.body) end
     local links = {}
     for i, itemID in ipairs(type(entry.items) == "table" and entry.items or {}) do
         if i > MAX_ITEMS_SHOWN then break end
@@ -136,6 +170,8 @@ end
 local function makeRow(child)
     local row = CreateFrame("Frame", nil, child)
     row:SetSize(ROW_WIDTH, 28)
+    row:EnableMouse(true)
+    BoardEntry.install(row)
     row.stripe = row:CreateTexture(nil, "BACKGROUND")
     row.stripe:SetPoint("TOPLEFT", row, "TOPLEFT", -2, 1)
     row.stripe:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 2, -3)
@@ -205,7 +241,7 @@ function BoardEntry.draw(child, entry, yOffset)
         row.check:Hide()
     end
     local mark = entry.done and "|cff888888" or "|cffffd200"
-    row.title:SetText(mark .. (type(entry.title) == "string" and entry.title or "(untitled)") .. "|r")
+    row.title:SetText(mark .. formatMoney(type(entry.title) == "string" and entry.title or "(untitled)") .. "|r")
     local body = bodyText(entry)
     row.body:SetText(body)
     row.body:SetShown(body ~= "")
