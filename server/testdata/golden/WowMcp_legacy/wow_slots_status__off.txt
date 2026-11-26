@@ -1,0 +1,5 @@
+# tool wow_slots_status variant=off
+# args: {}
+# isError: true
+--- content[0] ---
+the slot channel is off: the server was started without the slot addons configured (install them with the install script's --slots step and wire --addons-dir)

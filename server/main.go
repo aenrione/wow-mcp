@@ -31,8 +31,10 @@ import (
 
 	"wowmcp/internal/ledger"
 	"wowmcp/internal/mcpserver"
+	"wowmcp/internal/slots"
 	"wowmcp/internal/snapshot"
 	"wowmcp/internal/storage"
+	"wowmcp/internal/wiki"
 )
 
 const (
@@ -66,6 +68,7 @@ func main() {
 	maxResponseKB := flag.Int("max-response-kb", mcpserver.DefaultMaxResponseKB,
 		"limit of one tool answer in KB: a bigger answer is replaced by a compact envelope with a hint on how to ask for less; 0 = no limit")
 	staleMinutes := flag.Int("stale-minutes", 120, "after how many minutes tools warn that the snapshot is stale; 0 disables")
+	fv := registerForeverFlags()
 	version := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 
@@ -74,8 +77,15 @@ func main() {
 		return
 	}
 
+	if *fv.installSlots > 0 {
+		runInstallSlots(*fv.addonsDir, *fv.installSlots)
+		return
+	}
+
 	*historyDir = storage.ResolveBeside(*historyDir, ownDir())
 	goalsPath := resolveGoalsFile(*goalsFile, *historyDir)
+	*fv.wikiDir = storage.ResolveBeside(*fv.wikiDir, ownDir())
+	*fv.exportDir = storage.ResolveBeside(*fv.exportDir, ownDir())
 	// The server writes nothing in the game directory: the one given with --wow-dir and the one --file points into.
 	gameDirs := []string{*wowDir, storage.GameDirOf(*file)}
 	closeLog, err := setupLogging(*logPath, *historyDir, gameDirs)
@@ -93,11 +103,8 @@ func main() {
 			storage.WithMaxMB(*historyMaxMB), storage.WithCompressDays(*historyCompressDays))
 	}
 
-	if err := storage.RequireOutside("goals file (--goals-file)", goalsPath, gameDirs...); err != nil {
-		fmt.Fprintln(os.Stderr, "ERROR:", err)
-		closeLog()
-		os.Exit(1)
-	}
+	requireOwnPaths(gameDirs, closeLog, map[string]string{"goals file (--goals-file)": goalsPath,
+		"wiki directory (--wiki-dir)": *fv.wikiDir, "export directory (--export-dir)": *fv.exportDir})
 
 	if *check {
 		if err := runCheck(store, history, fresh); err != nil {
@@ -109,7 +116,8 @@ func main() {
 	}
 
 	log.Printf("start: version %s, game directory %q, client %q, history %q", serverVersion, *wowDir, *client, *historyDir)
-	if err := serve(store, history, fresh, goalsPath, *maxResponseKB); err != nil {
+	if err := serve(store, history, fresh, goalsPath, *maxResponseKB,
+		foreverOption(store, *fv.addonsDir, *fv.wikiDir, *fv.exportDir)); err != nil {
 		log.Print("ERROR: ", err)
 		closeLog()
 		os.Exit(1)
@@ -118,8 +126,9 @@ func main() {
 
 // serve runs the MCP server on stdio. With history it also opens the long history database and starts the watcher
 // that records every save of the dump file between tool calls.
-func serve(store *storage.Store, history *storage.History, fresh snapshot.Freshness, goalsPath string, maxResponseKB int) error {
+func serve(store *storage.Store, history *storage.History, fresh snapshot.Freshness, goalsPath string, maxResponseKB int, extra ...func(*mcpserver.Config)) error {
 	options := []func(*mcpserver.Config){func(c *mcpserver.Config) { c.MaxResponseKB = maxResponseKB }}
+	options = append(options, extra...)
 	if history != nil {
 		long, closeLedger := withLedger(history.Dir)
 		defer closeLedger()
@@ -173,6 +182,69 @@ func resolveGoalsFile(flagValue, historyDir string) string {
 		return ""
 	}
 	return filepath.Join(dir, "goals.json")
+}
+
+// foreverFlags are the Forever-suite flags, registered apart to keep main within the function-length rule.
+type foreverFlags struct {
+	addonsDir          *string
+	installSlots       *int
+	wikiDir, exportDir *string
+}
+
+func registerForeverFlags() foreverFlags {
+	return foreverFlags{
+		addonsDir: flag.String("addons-dir", os.Getenv("WOW_ADDONS_DIR"),
+			`the game's Interface/AddOns folder, enables the request-slot channel (wow_waypoint_set, wow_map_focus, ...); empty = slots disabled (can also be set with WOW_ADDONS_DIR)`),
+		installSlots: flag.Int("install-slots", 0,
+			"create this many WowMcp_S#### request-slot addons in --addons-dir and exit (0 = no; usual count 600)"),
+		wikiDir: flag.String("wiki-dir", "wiki",
+			`the server's own wiki directory (wow_wiki_*); a relative path is resolved from the server directory; never inside the game directory`),
+		exportDir: flag.String("export-dir", "exports",
+			`where wow_export_csv writes; a relative path is resolved from the server directory; never inside the game directory`),
+	}
+}
+
+// requireOwnPaths aborts when any of the server's own paths would land inside the game directory.
+func requireOwnPaths(gameDirs []string, closeLog func(), paths map[string]string) {
+	for name, dir := range paths {
+		if err := storage.RequireOutside(name, dir, gameDirs...); err != nil {
+			fmt.Fprintln(os.Stderr, "ERROR:", err)
+			closeLog()
+			os.Exit(1)
+		}
+	}
+}
+
+// runInstallSlots creates the request-slot addons (--install-slots) and reports the result.
+func runInstallSlots(addonsDir string, n int) {
+	if err := slots.Install(addonsDir, n); err != nil {
+		fmt.Fprintln(os.Stderr, "ERROR:", err)
+		os.Exit(1)
+	}
+	fmt.Printf("installed %d request slots in %s\n", n, addonsDir)
+}
+
+// foreverOption wires the Forever-suite dependencies: other-addon ingestion, CSV exports, the wiki and,
+// when --addons-dir is given, the request-slot channel. The slot bodies are the one thing the server
+// writes inside the game directory; slots.ValidAddOnsDir fences it to WowMcp_S#### folders only.
+func foreverOption(store *storage.Store, addonsDir, wikiDir, exportDir string) func(*mcpserver.Config) {
+	return func(c *mcpserver.Config) {
+		c.Extras = &storage.ExtrasStore{Store: store}
+		c.ExportDir = exportDir
+		w := wiki.Wiki{Dir: wikiDir}
+		if err := w.Seed(); err != nil {
+			log.Print("WARN: wiki seed: ", err)
+		}
+		c.Wiki = w
+		if addonsDir == "" {
+			return
+		}
+		if err := slots.ValidAddOnsDir(addonsDir); err != nil {
+			log.Print("WARN: request slots disabled: ", err)
+			return
+		}
+		c.Slots = slots.Engine{Queue: &slots.Queue{File: filepath.Join(ownDir(), "slots.json")}, AddOnsDir: addonsDir}
+	}
 }
 
 // newServer assembles the MCP server from the snapshot store and the freshness policy. Shared by main and tests.

@@ -28,6 +28,7 @@ DRY=0
 ROLLBACK=0
 SKIP_CHECK=0
 BUILD=0
+SLOTS=0
 BINARY=
 ADDON_SRC=
 ADDONS_DIR=
@@ -44,6 +45,9 @@ Usage: ./install.sh [options]
   --binary FILE      server binary to install (default: ./wow-mcp from the release archive, or ./bin/wow-mcp)
   --build            build the server from server/ with Go (source checkout only) instead of using a ready binary
   --keep N           how many addon backups and old binaries to keep (default: 2)
+  --slots [N]        also install N request-slot addons (WowMcp_S0001..) in the AddOns folder
+                     for the server's inbound channel (waypoints, map focus); N defaults to 600.
+                     Slot folders above N are removed. Without --slots no slots are touched.
   --skip-check       do not run wow-mcp --check at the end
   --dry-run          print what would be done and change nothing
   --rollback         go back to the previous addon backup and the previous server binary
@@ -72,6 +76,12 @@ while [ $# -gt 0 ]; do
 	--install-dir) [ $# -ge 2 ] || die "--install-dir needs a value"; INSTALL_DIR=$2; shift 2 ;;
 	--binary) [ $# -ge 2 ] || die "--binary needs a value"; BINARY=$2; shift 2 ;;
 	--keep) [ $# -ge 2 ] || die "--keep needs a value"; KEEP=$2; shift 2 ;;
+	--slots)
+		case ${2:-} in
+		'' | *[!0-9]*) SLOTS=600; shift ;;
+		*) SLOTS=$2; shift 2 ;;
+		esac
+		;;
 	--build) BUILD=1; shift ;;
 	--skip-check) SKIP_CHECK=1; shift ;;
 	--dry-run) DRY=1; shift ;;
@@ -88,6 +98,10 @@ esac
 case $CLIENT in
 */* | '' | . | ..) die "--client must be a single folder name such as _forever_" ;;
 esac
+case $SLOTS in
+*[!0-9]*) die "--slots must be a number" ;;
+esac
+[ "$SLOTS" -le 9999 ] || die "--slots must be at most 9999 (the WowMcp_SNNNN naming)"
 [ -n "$INSTALL_DIR" ] || die "the install directory must not be empty"
 
 stamp() { date +%Y%m%d-%H%M%S; }
@@ -287,6 +301,43 @@ install_addon() {
 		ok "addon installed: $ADDON_TARGET"
 	fi
 	prune_backups
+}
+
+# install_slots generates the request-slot addons WowMcp_S0001..WowMcp_S$SLOTS: the inbound
+# channel the server writes requests into (the same files server/internal/slots.Install creates).
+# It writes ONLY folders named WowMcp_SNNNN directly under Interface/AddOns, and removes
+# slot folders above $SLOTS so an older, larger install leaves no stale bodies.
+install_slots() {
+	[ "$SLOTS" -gt 0 ] || return 0
+	step "Request slots: $SLOTS folders WowMcp_S0001..$(printf 'WowMcp_S%04d' "$SLOTS")"
+	case $ADDONS_DIR in
+	*/Interface/AddOns) ;;
+	*) die "request slots go only under Interface/AddOns: $ADDONS_DIR" ;;
+	esac
+	if [ "$DRY" = 1 ]; then
+		ok "[dry-run] create $SLOTS slot folders (toc + body.lua) in $ADDONS_DIR and remove slots above $SLOTS"
+		return 0
+	fi
+	is_t=$(date +%s)
+	is_n=1
+	while [ "$is_n" -le "$SLOTS" ]; do
+		is_name=$(printf 'WowMcp_S%04d' "$is_n")
+		is_dir="$ADDONS_DIR/$is_name"
+		mkdir -p "$is_dir"
+		printf '## Interface: 16001\n## Title: WowMcp slot %04d\n## Notes: Request slot for WowMcp.\n## Group: WowMcp\n## LoadOnDemand: 1\n\nbody.lua\n' "$is_n" >"$is_dir/$is_name.toc"
+		printf 'WowMcpInbox = {["t"]=%s,["reqs"]={},["got"]={}}\n' "$is_t" >"$is_dir/body.lua"
+		is_n=$((is_n + 1))
+	done
+	for is_dir in "$ADDONS_DIR"/WowMcp_S[0-9][0-9][0-9][0-9]; do
+		[ -d "$is_dir" ] || continue
+		is_num=$(basename "$is_dir" | sed 's/^WowMcp_S0*//')
+		[ -n "$is_num" ] || is_num=0
+		if [ "$is_num" -gt "$SLOTS" ]; then
+			rm -rf "${is_dir:?}"
+			ok "removed slot above $SLOTS: $(basename "$is_dir")"
+		fi
+	done
+	ok "$SLOTS request slots installed (the server writes requests into their body.lua files)"
 }
 
 check_interface() {
@@ -490,6 +541,7 @@ ok "addon source: $ADDON_SRC (version $(toc_value "$ADDON_SRC/$ADDON_NAME.toc" V
 ok "server binary: $BINARY"
 
 install_addon
+install_slots
 check_interface
 install_binary
 if [ -n "$BUILT_TMP" ]; then rm -rf "${BUILT_TMP:?}"; fi

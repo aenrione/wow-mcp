@@ -1,0 +1,5 @@
+# tool wow_quest_story variant=off
+# args: {"character":"Piekasz","level":10,"limit":5,"since":1764000000}
+# isError: true
+--- content[0] ---
+reading other addons' SavedVariables is not wired: the server was started without the extras reader

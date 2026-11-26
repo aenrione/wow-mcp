@@ -62,7 +62,7 @@ func TestEveryToolHasAnnotations(t *testing.T) {
 		}
 		if !a.ReadOnlyHint {
 			writers++
-			if tl.Name != "wow_goal_set" || a.DestructiveHint == nil || !*a.DestructiveHint {
+			if !expectedWriters[tl.Name] || a.DestructiveHint == nil || !*a.DestructiveHint {
 				t.Errorf("%s: unexpected writer: %+v", tl.Name, a)
 			}
 			continue
@@ -71,9 +71,21 @@ func TestEveryToolHasAnnotations(t *testing.T) {
 			t.Errorf("%s: read-only tools are idempotent", tl.Name)
 		}
 	}
-	if writers != 1 {
-		t.Errorf("%d tools are not read-only, want exactly 1", writers)
+	if writers != len(expectedWriters) {
+		t.Errorf("%d tools are not read-only, want exactly %d", writers, len(expectedWriters))
 	}
+}
+
+// expectedWriters are the tools that change something; everything else must be read-only.
+// wow_goal_set, wow_export_csv and the wiki write only in the server's own directory;
+// the remote tools write request-slot bodies the in-game addon polls.
+var expectedWriters = map[string]bool{
+	"wow_goal_set":        true,
+	"wow_export_csv":      true,
+	"wow_waypoint_set":    true,
+	"wow_map_focus":       true,
+	"wow_waypoints_clear": true,
+	"wow_wiki_write":      true,
 }
 
 func TestPickPathAndLimit(t *testing.T) {

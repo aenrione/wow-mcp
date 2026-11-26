@@ -1,0 +1,5 @@
+# tool wow_export_csv variant=off
+# args: {"character":"Piekasz","dataset":"prices"}
+# isError: true
+--- content[0] ---
+reading other addons' SavedVariables is not wired: the server was started without the extras reader

@@ -1,0 +1,5 @@
+# tool wow_waypoint_set variant=off
+# args: {"character":"Piekasz","mapID":1429,"title":"Golden","x":44.2,"y":61.1,"zone":"Westfall"}
+# isError: true
+--- content[0] ---
+the slot channel is off: the server was started without the slot addons configured (install them with the install script's --slots step and wire --addons-dir)

@@ -26,6 +26,11 @@ Return to the previous version: the last addon copy from backup\ and the newest 
 .PARAMETER KeepOld
 How many recent addon copies and .old.exe files to keep. Defaults to 2.
 
+.PARAMETER Slots
+Also install this many request-slot addons (WowMcp_S0001..) in the AddOns folder: the
+inbound channel the server writes requests into (waypoints, map focus). 600 is the usual
+count; slot folders above the number are removed. Defaults to 0 (no slots are touched).
+
 .PARAMETER SkipCheck
 Skip running wow-mcp.exe --check at the end.
 
@@ -46,6 +51,7 @@ param(
     [switch]$Build,
     [switch]$Rollback,
     [int]$KeepOld = 2,
+    [int]$Slots = 0,
     [switch]$SkipCheck
 )
 
@@ -91,6 +97,9 @@ function Test-Prerequisites($Paths) {
     }
     if ($KeepOld -lt 1) {
         Stop-Install '-KeepOld must be a number >= 1.'
+    }
+    if (($Slots -lt 0) -or ($Slots -gt 9999)) {
+        Stop-Install '-Slots must be between 0 and 9999 (the WowMcp_SNNNN naming).'
     }
 }
 
@@ -197,6 +206,39 @@ function Install-Addon($Paths) {
     Copy-DirectoryMirror $Paths.AddonSource $Paths.AddonTarget
     Remove-OldAddonBackups $Paths
     Write-Ok ('Addon installed: ' + $Paths.AddonTarget)
+}
+
+# Generates the request-slot addons WowMcp_S0001..WowMcp_S$Slots: the inbound channel the
+# server writes requests into (the same files server/internal/slots.Install creates). It
+# writes ONLY folders named WowMcp_SNNNN directly under Interface\AddOns, and removes slot
+# folders above $Slots so an older, larger install leaves no stale bodies.
+function Install-RequestSlots($Paths) {
+    if ($Slots -lt 1) { return }
+    Write-Step ('Request slots: ' + $Slots + ' folders WowMcp_S0001..WowMcp_S' + $Slots.ToString('0000'))
+    $addonsLeaf = Split-Path -Leaf $Paths.AddonsDir
+    $interfaceLeaf = Split-Path -Leaf (Split-Path -Parent $Paths.AddonsDir)
+    if (($addonsLeaf -ne 'AddOns') -or ($interfaceLeaf -ne 'Interface')) {
+        Stop-Install ('Request slots go only under Interface\AddOns: ' + $Paths.AddonsDir)
+    }
+    if (-not $PSCmdlet.ShouldProcess($Paths.AddonsDir, ('Install ' + $Slots + ' request slots'))) { return }
+    $t = [System.DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $body = 'WowMcpInbox = {["t"]=' + $t + ',["reqs"]={},["got"]={}}' + "`n"
+    for ($n = 1; $n -le $Slots; $n++) {
+        $name = 'WowMcp_S' + $n.ToString('0000')
+        $dir = Join-Path $Paths.AddonsDir $name
+        $null = New-Item -ItemType Directory -Force -Path $dir
+        $toc = "## Interface: 16001`n## Title: WowMcp slot " + $n.ToString('0000') +
+            "`n## Notes: Request slot for WowMcp.`n## Group: WowMcp`n## LoadOnDemand: 1`n`nbody.lua`n"
+        [System.IO.File]::WriteAllText((Join-Path $dir ($name + '.toc')), $toc)
+        [System.IO.File]::WriteAllText((Join-Path $dir 'body.lua'), $body)
+    }
+    $stale = @(Get-ChildItem -LiteralPath $Paths.AddonsDir -Directory |
+            Where-Object { ($_.Name -cmatch '^WowMcp_S\d{4}$') -and ([int]$_.Name.Substring(8) -gt $Slots) })
+    foreach ($dir in $stale) {
+        Remove-Item -LiteralPath $dir.FullName -Recurse -Force
+        Write-Ok ('Removed slot above ' + $Slots + ': ' + $dir.Name)
+    }
+    Write-Ok ($Slots.ToString() + ' request slots installed (the server writes requests into their body.lua files).')
 }
 
 # "1.15.7.63000" -> 11507 (Interface number format: major*10000 + minor*100 + patch)
@@ -439,6 +481,7 @@ function Write-Summary($Paths) {
 
 function Invoke-Install($Paths) {
     Install-Addon $Paths
+    Install-RequestSlots $Paths
     Test-InterfaceVersion $Paths
     Install-Server $Paths
     if (-not $SkipCheck) { Invoke-ServerCheck $Paths }

@@ -1,0 +1,5 @@
+# tool wow_wiki_write variant=off
+# args: {"content":"# Gold routes","slug":"gold-routes"}
+# isError: true
+--- content[0] ---
+the wiki is off: the server has no wiki directory wired

@@ -33,7 +33,7 @@ read_globals = {
     "GetNumSpellTabs", "GetNumTalentTabs", "GetNumTalents", "GetNumTrainerServices", "GetPetActionInfo",
     "GetProfessionInfo", "GetProfessions", "GetQuestLogLeaderBoard", "GetQuestLogSelection", "GetQuestLogTitle",
     "GetRealmName", "GetSkillLineInfo", "GetSpellBookItemName", "GetSpellTabInfo", "GetTalentInfo",
-    "GetTalentTabInfo", "GetTaxiMapID", "GetTime", "GetTrainerServiceCost", "GetTrainerServiceInfo",
+    "GetTalentTabInfo", "GetTaxiMapID", "GetTime", "GetTrainerServiceCost", "GetTrainerServiceInfo", "InCombatLockdown",
     "GetTrainerServiceLevelReq", "NumTaxiNodes", "ReloadUI", "SelectQuestLogEntry", "TaxiNodeCost",
     "TaxiNodeGetType", "TaxiNodeName", "UnitClass", "UnitCreatureFamily", "UnitExists", "UnitFactionGroup",
     "UnitIsDead", "UnitLevel", "UnitName", "UnitRace", "UnitXP", "UnitXPMax", "date", "debugprofilestop",

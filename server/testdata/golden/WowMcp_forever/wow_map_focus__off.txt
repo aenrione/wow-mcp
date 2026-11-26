@@ -1,0 +1,5 @@
+# tool wow_map_focus variant=off
+# args: {"mapID":1429,"x":50,"y":50}
+# isError: true
+--- content[0] ---
+the slot channel is off: the server was started without the slot addons configured (install them with the install script's --slots step and wire --addons-dir)

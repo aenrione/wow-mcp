@@ -4,7 +4,7 @@
 ## Author: Piekasz (GitHub: Piekario)
 ## X-License: GPL-3.0-or-later, author attribution must be kept (see NOTICE)
 ## Version: 0.20.0
-## OptionalDeps: QuestieDB, Questie, Guidelime, TomTom
+## OptionalDeps: QuestieDB, Questie, Guidelime, TomTom, RXPGuides, Profiteer, ProfitHUB_Cell, OpenMap, WhatsTraining, ForeverWoWBiS, Auctionator, Pawn
 ## SavedVariables: WowMcpDB
 
 # Foundations: each file depends only on the files above it.
@@ -25,6 +25,7 @@ LogoutGuard.lua
 Snapshot.lua
 Periods.lua
 LegacyDiscovery.lua
+Inbox.lua
 
 # Sections collected on every dump. File order = section order in the dump.
 Sections\Character.lua
@@ -47,6 +48,8 @@ Sections\EquipmentSets.lua
 Sections\Pvp.lua
 Sections\Guide.lua
 Sections\QuestDb.lua
+Sections\Rxp.lua
+Sections\Companions.lua
 
 # Sections collected when a window opens.
 Sections\Trainer.lua

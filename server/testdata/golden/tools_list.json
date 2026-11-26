@@ -428,6 +428,30 @@
       "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "Account economy (Profiteer)"
+    },
+    "description": "The account economy from Profiteer's SavedVariables (ProfiteerDB): per-realm summary (characters, prices known, last auction scan), the gold ledger by day and category (loot, quests, vendor sales and buys, auction buys, mail, repairs, deposits, training), each character's gold curve, own auctions, scanned inventories (top items by value) and unlearned recipes (up to 50). days (default 14) is the ledger and gold-curve window counted back from the newest ledger day; character narrows the per-character parts. The file refreshes when the game saves SavedVariables (/reload or logout); the source field says how old it is. Fork feature: the server reads another addon's file, still read-only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "character": {
+          "description": "character name; empty = every character Profiteer has seen",
+          "type": "string"
+        },
+        "days": {
+          "description": "ledger and gold-curve window in days, counted back from the newest ledger day (default 14)",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "wow_economy"
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "Equipment"
     },
     "description": "Equipped gear: slot, ID, name, quality, durability, type, item level, stats and the full in-game tooltip text (tooltip field: damage, speed, DPS, bonuses); the ammo slot is the ammunition with its count. The durability field summarizes durability (lowest percentage, items close to breaking) and the repair cost from the last vendor who repairs. The equipmentSets section (from addon 0.7.0) holds the in-game equipment sets: name, isEquipped (the set is currently worn), missing (how many items are missing) and items (slot, ID, name). To compare with an item from the bags, also use wow_bags. Data comes from the last /reload or logout in game; the snapshot.ageMinutes field says how many minutes old it is.",
@@ -478,6 +502,34 @@
       "type": "object"
     },
     "name": "wow_export"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Export economy data as CSV"
+    },
+    "description": "Writes one dataset from Profiteer's SavedVariables as a CSV file in the server's own export directory (never the game directory) and returns the absolute path and row count. dataset: prices, ledger, inventory or history; character narrows the inventory dataset. The file \u003cdataset\u003e.csv is overwritten on every call.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "character": {
+          "description": "only this character's rows (inventory dataset); empty = all characters",
+          "type": "string"
+        },
+        "dataset": {
+          "description": "what to export: prices (last scanned auction prices), ledger (the gold ledger by day and category), inventory (scanned bags and bank with values) or history (every price-history snapshot)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dataset"
+      ],
+      "type": "object"
+    },
+    "name": "wow_export_csv"
   },
   {
     "annotations": {
@@ -801,6 +853,60 @@
   },
   {
     "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Focus the world map"
+    },
+    "description": "Asks the addon in game to focus the stitched world map (OpenMap) on mapID (uiMapID) at x, y in 0..100. It writes ONLY the WowMcp_S* request-slot addon bodies; the addon in game polls a slot every ~15 s, so the request takes effect within about that time.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "mapID": {
+          "description": "required uiMapID of the zone to focus the stitched map on",
+          "type": "integer"
+        },
+        "x": {
+          "description": "map X coordinate in 0..100",
+          "type": "number"
+        },
+        "y": {
+          "description": "map Y coordinate in 0..100",
+          "type": "number"
+        }
+      },
+      "required": [
+        "mapID",
+        "x",
+        "y"
+      ],
+      "type": "object"
+    },
+    "name": "wow_map_focus"
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Map pins and waypoints"
+    },
+    "description": "Every pin the player saved on the map, unified from OpenMap (OpenMapDB pins) and TomTom (persistent waypoints): source, uiMapID, x/y (0..1), title or note and when it was saved. Also the flight points OpenMap has seen the character learn (flightsKnown). Addons that never saved are simply skipped. The file refreshes when the game saves SavedVariables (/reload or logout); the source field says how old it is. Fork feature: the server reads another addon's file, still read-only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "character": {
+          "description": "character name; empty = most recently dumped character",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "wow_map_pins"
+  },
+  {
+    "annotations": {
       "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
@@ -818,6 +924,29 @@
       "type": "object"
     },
     "name": "wow_pet"
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Item price check (Profiteer)"
+    },
+    "description": "What an item is worth from Profiteer's scans: the vendor price, the last scanned auction price per realm (min, reference, quantity, listings, when), up to 30 price-history snapshots and an estimated sold-per-day rate (a rough estimate: sales cannot be told apart from cancellations). Give the item as a name, a name fragment or a numeric id; an ambiguous fragment returns up to 10 matches to choose from. The file refreshes when the game saves SavedVariables (/reload or logout); the source field says how old it is. Fork feature: the server reads another addon's file, still read-only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "item": {
+          "description": "item name, name fragment or numeric item id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "item"
+      ],
+      "type": "object"
+    },
+    "name": "wow_price"
   },
   {
     "annotations": {
@@ -951,6 +1080,38 @@
       "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "Quest history (Questie)"
+    },
+    "description": "The character's quest history from Questie's own SavedVariables (QuestieConfig): how many quests are completed, the completed quest ids (up to 500) and the journey timeline (quest accepted, completed or abandoned, with the level and time). Filters: limit (journey entries, default 100, newest kept), since (Unix time) and level. The file refreshes when the game saves SavedVariables (/reload or logout); the source field says how old it is. Fork feature: the server reads another addon's file, still read-only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "character": {
+          "description": "character name; empty = most recently dumped character",
+          "type": "string"
+        },
+        "level": {
+          "description": "only journey entries recorded at this character level",
+          "type": "integer"
+        },
+        "limit": {
+          "description": "journey entries to return, newest last (default 100)",
+          "type": "integer"
+        },
+        "since": {
+          "description": "only journey entries at or after this Unix time",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "wow_quest_story"
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "Quest log"
     },
     "description": "Quest log: title, ID, level, zone, whether completed, and the progress of every objective. Use it for questions about quests, missing prerequisite quests, or what to turn in. Data comes from the last /reload or logout in game; the snapshot.ageMinutes field says how many minutes old it is.",
@@ -1075,6 +1236,26 @@
       "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "Leveling guide state (RXPGuides)"
+    },
+    "description": "The character's RXPGuides state from its own SavedVariables (RXPCData and RXPCTrackingData): the current guide, group and step, the saved position in every guide (up to 40), the cached quest objective state (quest id, name, each objective's progress) and a per-level tracking summary of the last 6 levels (deaths, mob kills and XP by zone, quest XP). The file refreshes when the game saves SavedVariables (/reload or logout); the source field says how old it is. Fork feature: the server reads another addon's file, still read-only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "character": {
+          "description": "character name; empty = most recently dumped character",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "wow_rxp"
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "Snapshot search"
     },
     "description": "Searches for text (case-insensitive) across one character's whole snapshot at once: quests (title, objectives, zone), items in the bags, bank and equipped (name, type, description), spells, trainer and vendor offers (including remembered ones), quest rewards, quests from NPC windows, stable, loot, recipes and their materials, mail, reputation, prices and own auctions, professions, currencies, macros and flight points. Returns hits grouped by section, with the location (path) and a short summary; up to 20 hits per section, truncated says how many were cut. To find an item across all characters use wow_find_item. Data comes from the last /reload or logout in game; the snapshot.ageMinutes field says how many minutes old it is.",
@@ -1175,6 +1356,20 @@
       "type": "object"
     },
     "name": "wow_shopping_list"
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Request slot status"
+    },
+    "description": "State of the request-slot channel to the game: how many WowMcp_S* slot addons are installed, how many requests are pending (queued but not yet acknowledged by the addon), when the slot bodies were last written, and a rough slotsLeftEstimate (each addon poll, ~15 s, consumes one slot until the next /reload in game).",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "name": "wow_slots_status"
   },
   {
     "annotations": {
@@ -1361,5 +1556,155 @@
       "type": "object"
     },
     "name": "wow_vendor"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Set a TomTom waypoint"
+    },
+    "description": "Asks the addon in game to set a TomTom waypoint: mapID (required uiMapID; a zone name is NOT resolved here - wow_quest_lookup and the quest/guide data provide zone map and area IDs), x and y in 0..100, optional title and character. It writes ONLY the WowMcp_S* request-slot addon bodies under Interface/AddOns; the addon in game polls a slot every ~15 s, so the request takes effect within about that time. No gameplay automation: in game the waypoint is set through TomTom's public API.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "character": {
+          "description": "character the request is meant for (informational); empty = whoever is logged in",
+          "type": "string"
+        },
+        "mapID": {
+          "description": "required uiMapID of the zone; this tool does NOT resolve a zone name - wow_quest_lookup and the RXP/Questie data give zone map and area IDs",
+          "type": "integer"
+        },
+        "title": {
+          "description": "waypoint label shown on the TomTom arrow",
+          "type": "string"
+        },
+        "x": {
+          "description": "map X coordinate in 0..100 (as shown in game, e.g. 52.6)",
+          "type": "number"
+        },
+        "y": {
+          "description": "map Y coordinate in 0..100",
+          "type": "number"
+        },
+        "zone": {
+          "description": "zone name for the waypoint title only; NOT a substitute for mapID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mapID",
+        "x",
+        "y"
+      ],
+      "type": "object"
+    },
+    "name": "wow_waypoint_set"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Clear TomTom waypoints"
+    },
+    "description": "Asks the addon in game to clear all TomTom waypoints. It writes ONLY the WowMcp_S* request-slot addon bodies; the addon in game polls a slot every ~15 s, so the request takes effect within about that time.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "name": "wow_waypoints_clear"
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Wiki pages"
+    },
+    "description": "Lists the pages of the assistant's own wiki (markdown files in the server's wiki directory): slug, title, size and when each was last modified. The wiki holds durable min-max notes for WoW: Forever, written by and for the assistant.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "name": "wow_wiki_list"
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Read a wiki page"
+    },
+    "description": "Returns the whole markdown content of one wiki page by slug (see wow_wiki_list).",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "slug": {
+          "description": "page slug from wow_wiki_list, e.g. gold-routes",
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug"
+      ],
+      "type": "object"
+    },
+    "name": "wow_wiki_read"
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Search the wiki"
+    },
+    "description": "Searches the wiki (case-insensitive) over page titles and content; up to 10 hits, each with the slug, title and a snippet of at most 200 characters around the first match.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "description": "text to look for (case-insensitive) in page titles and content",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "wow_wiki_search"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Write a wiki page"
+    },
+    "description": "Creates or replaces one page of the assistant's wiki (slug: 1-64 of a-z, 0-9 and -; content: the whole new markdown). It writes ONLY a \u003cslug\u003e.md file in the server's own wiki directory - nothing in the game, nothing in the game directory, nothing anywhere else. Keep notes durable: one topic per page, dated claims.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "description": "the whole new markdown content of the page; first line '# Title' becomes its title",
+          "type": "string"
+        },
+        "slug": {
+          "description": "page slug: 1-64 of a-z, 0-9 and -, e.g. gold-routes",
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug",
+        "content"
+      ],
+      "type": "object"
+    },
+    "name": "wow_wiki_write"
   }
 ]

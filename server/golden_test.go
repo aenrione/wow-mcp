@@ -102,6 +102,25 @@ func goldenCases() []goldenCase {
 	for _, sec := range []string{"actionBars", "macros", "completedQuests", "flightPaths", "vendor", "bank", "probe", "stats", "auras", "inspect", "buyback", "friends", "guild", "xpGains", "equipmentSets", "pvp"} {
 		add(tc("wow_section", "section_"+sec, args{"section": sec}))
 	}
+	// Forever-suite tools run unwired in the golden server (no Extras/Slots/Wiki), so the answers are
+	// the stable "off" errors plus argument validation; the wired paths have unit tests in their packages.
+	add(
+		tc("wow_rxp", "off", args{"character": charKnown}),
+		tc("wow_quest_story", "off", args{"character": charKnown, "level": 10, "limit": 5, "since": 1764000000}),
+		tc("wow_economy", "off", args{"character": charKnown, "days": 7}),
+		tc("wow_price", "off", args{"item": "Linen Cloth"}),
+		tc("wow_map_pins", "off", args{"character": charKnown}),
+		tc("wow_export_csv", "off", args{"dataset": "prices", "character": charKnown}),
+		tc("wow_waypoint_set", "off", args{"mapID": 1429, "x": 44.2, "y": 61.1, "title": "Golden", "zone": "Westfall", "character": charKnown}),
+		tc("wow_map_focus", "off", args{"mapID": 1429, "x": 50, "y": 50}),
+		tc("wow_waypoints_clear", "off", args{}),
+		tc("wow_slots_status", "off", args{}),
+		tc("wow_wiki_list", "off", args{}),
+		tc("wow_wiki_read", "off", args{"slug": "gold-routes"}),
+		tc("wow_wiki_search", "off", args{"query": "gold"}),
+		tc("wow_wiki_write", "off", args{"slug": "gold-routes", "content": "# Gold routes"}),
+	)
+
 	add(
 		tcs("wow_section", "section_vendor_stale", args{"section": "vendor"}),
 		tc("wow_section", "unknown_section", args{"section": "nonexistent"}),

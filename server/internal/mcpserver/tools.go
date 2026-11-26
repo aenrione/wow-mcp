@@ -161,6 +161,9 @@ func (s *service) tools() []tool {
 		s.progressTools(),
 		s.goalTools(),
 		s.accountTools(),
+		s.extrasTools(s.Extras, s.ExportDir),
+		s.remoteTools(),
+		s.wikiTools(),
 	)
 }
 

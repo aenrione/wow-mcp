@@ -53,6 +53,10 @@ type Config struct {
 	// MaxResponseKB caps the size of one tool answer (flag --max-response-kb); bigger answers become a compact
 	// envelope with a narrowing hint. 0 = no cap.
 	MaxResponseKB int
+	Extras        Extras      // nil = other-addon SavedVariables ingestion disabled (wow_rxp, wow_quest_story, ...)
+	ExportDir     string      // where wow_export_csv writes; "" disables the tool
+	Slots         SlotChannel // nil = request slots disabled (wow_waypoint_set, wow_map_focus, ...)
+	Wiki          WikiStore   // nil = wiki disabled (wow_wiki_*)
 }
 
 const instructions = "The tools read World of Warcraft: Forever character state saved by the WowMcp addon. " +
@@ -74,11 +78,17 @@ const instructions = "The tools read World of Warcraft: Forever character state 
 	"bags: wow_bag_plan (what to do with full bags: keep, bank, sell, auction; destroys nothing); " +
 	"account and search: wow_account, wow_find_item, wow_search (text across one character's whole snapshot), wow_leftovers (leftover quest items), wow_compare_characters (two characters side by side), wow_alt_mail (what to mail between characters), wow_account_crafting (what the account can craft from combined materials), wow_make_or_buy (craft or buy on the auction house); " +
 	"auras and flight: wow_buffs (buffs, debuffs, missing class buffs), wow_flights (flight points versus quest zones), wow_quest_route (suggested order of zones with quests); quest locations and guide: wow_quest_lookup (where a quest starts and ends, from the quest database installed in the game; always use it instead of answering quest locations from memory), wow_guide (next steps of the player's Guidelime / TUGs leveling guide); friends and guild: wow_social; " +
-	"wow_export (a summary to paste elsewhere). " +
+	"wow_export (a summary to paste elsewhere); " +
+	"other installed addons: wow_rxp (RestedXP guide progress and quest objectives), wow_quest_story (Questie quest timeline: accepts, completions, abandons with level and time), " +
+	"wow_economy and wow_price (Profiteer auction prices with history, income/expense ledger, gold curve, alt inventories), wow_map_pins (OpenMap pins and TomTom waypoints), " +
+	"wow_export_csv (writes a CSV of prices, ledger, inventory or history in the server's export directory); " +
+	"remote requests: wow_waypoint_set, wow_map_focus and wow_waypoints_clear queue a request the in-game addon picks up within ~15 s and executes through TomTom/OpenMap (wow_slots_status shows the channel); " +
+	"wiki: wow_wiki_list, wow_wiki_read, wow_wiki_search and wow_wiki_write keep the assistant's own min-maxing notes as markdown in the server's directory. " +
 	"Ready-made prompts: session_plan, trainer_shopping, what_to_sell, gear_upgrades, session_summary, account_overview, " +
 	"profession_progress, talent_planning, what_to_auction, dungeon_finder, before_logout, first_run, pet_care, week_in_game. " +
 	"Answer in the user's language and keep in-game names (items, spells, zones) in English. " +
-	"The server performs no actions in the game; it writes only the snapshot history and the goals file in its own directory (wow_goal_set)."
+	"The server performs no gameplay actions; its only reach into the game is the queued waypoint/map-focus requests above, " +
+	"and it writes the snapshot history, goals, wiki pages and CSV exports in its own directory plus the WowMcp_S request-slot files in Interface/AddOns."
 
 func New(cfg Config) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: cfg.Name, Version: cfg.Version}, &mcp.ServerOptions{

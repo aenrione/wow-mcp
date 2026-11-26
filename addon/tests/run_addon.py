@@ -2333,6 +2333,240 @@ def check_quest_sources_absent() -> None:
     assert guide["textUnavailable"] and guide["registeredGuides"] == 2 and guide["next"] is None, dict(guide)
 
 
+RXP_STUB = r"""
+RXPCData = {
+    currentGuideName = "1-6 Mulgore", currentGuideGroup = "RestedXP", currentStep = 3, currentStepId = 12345,
+    stepSkip = 2,
+    guideProgress = {},
+    questObjectivesCache = {
+        [947] = { { type = "item", numRequired = 5, numFulfilled = 5, text = "|cff00ff00Scaber Stalk: 5/5|r", finished = true } },
+        [888] = { { type = "monster", numRequired = 1, numFulfilled = 0, text = "Not in the log", finished = false } },
+    },
+}
+for i = 1, 45 do RXPCData.guideProgress[string.format("RestedXP|Leveling|Guide %02d", i)] = { step = i, stepId = 100 + i } end
+RXPCTrackingData = { levels = {} }
+for level = 14, 20 do
+    RXPCTrackingData.levels[level] = {
+        deaths = level - 14,
+        mobs = { Mulgore = { xp = 100 * level, count = 10 }, Barrens = { xp = 50, count = 2 } },
+        quests = { Mulgore = { [900 + level] = 200 } },
+        timestamp = 1000 + level,
+    }
+end
+RXPGuides = { RegisterGuide = function() end }
+local mockGuide = { name = "Mulgore", group = "RestedXP", displayname = "1-6 |cffff0000Mulgore|r", steps = {} }
+for i = 1, 20 do
+    mockGuide.steps[i] = { index = i, elements = {
+        { text = "|cffff0000Step " .. i .. "|r text", questId = 2000 + i, tag = "accept" },
+        { text = "Go to spot", zone = 1439, x = 40 + i, y = 60 },
+    } }
+end
+RXPFrame = { ScrollChild = { framePool = { [1] = { guide = mockGuide } } } }
+"""
+
+
+def check_rxp_section() -> None:
+    """Forever fork: the rxp section reads RXPCData/RXPCTrackingData and the parsed guide behind RXPFrame."""
+    runtime, g, _ = load_addon("forever", before_addon=RXP_STUB)
+    event_dispatcher(g)(None, "PLAYER_LOGIN")
+    g.SlashCmdList["WOWMCP"]("reload")
+    snapshot = saved_character(g)
+    assert not values(snapshot["errors"]), values(snapshot["errors"])
+    rxp = snapshot["rxp"]
+    assert (rxp["currentGuideName"], rxp["currentGuideGroup"]) == ("1-6 Mulgore", "RestedXP"), dict(rxp)
+    assert (rxp["currentStep"], rxp["currentStepId"], rxp["stepSkip"]) == (3, 12345, 2)
+    assert rxp["totalSteps"] == 20 and rxp["guideDisplayName"] == "1-6 Mulgore"
+    # The current step and the next 8, with markup stripped and element details kept.
+    steps = values(rxp["steps"])
+    assert [s["index"] for s in steps] == [3, 4, 5, 6, 7, 8, 9, 10, 11], [s["index"] for s in steps]
+    assert steps[0]["text"] == "Step 3 text Go to spot", steps[0]["text"]
+    elements = values(steps[0]["elements"])
+    assert elements[0]["questId"] == 2003 and elements[0]["tag"] == "accept", dict(elements[0])
+    assert (elements[1]["zone"], elements[1]["x"], elements[1]["y"]) == (1439, 43, 60), dict(elements[1])
+    # Progress bounded to 40 entries with the real total next to it.
+    progress = values(rxp["guideProgress"])
+    assert len(progress) == 40 and rxp["guideProgressTotal"] == 45
+    assert progress[0]["guide"] == "RestedXP|Leveling|Guide 01" and progress[0]["step"] == 1, dict(progress[0])
+    # Objectives only for quests in the log (947 yes, 888 no).
+    quests = values(rxp["questObjectives"])
+    assert [q["questId"] for q in quests] == [947], [dict(q) for q in quests]
+    objective = values(quests[0]["objectives"])[0]
+    assert objective["text"] == "Scaber Stalk: 5/5" and objective["finished"] is True, dict(objective)
+    # Tracking summary: the last 5 levels with XP totals per level.
+    levels = values(rxp["levels"])
+    assert [lv["level"] for lv in levels] == [16, 17, 18, 19, 20], [dict(lv) for lv in levels]
+    assert (levels[0]["deaths"], levels[0]["totalMobXp"], levels[0]["totalQuestXp"]) == (2, 1650, 200), dict(levels[0])
+
+
+COMPANIONS_STUB = r"""
+WT_API = { IsReady = function() return true end, GetSpells = function()
+    local spells = { { name = "Known Spell", level = 1, cost = 0, status = "known" } }
+    for i = 1, 40 do spells[#spells + 1] = { name = "Spell " .. i, level = i, cost = i * 10, status = "available" } end
+    return spells
+end }
+auctionatorCallers = {}
+Auctionator = { API = { v1 = {
+    GetAuctionPriceByItemID = function(caller, id)
+        auctionatorCallers[#auctionatorCallers + 1] = caller
+        if id == 2589 then return 15 end
+    end,
+    GetAuctionAgeByItemID = function(caller, id) return 2 end,
+} } }
+function PawnIsReady() return true end
+function PawnGetItemData(link) if tostring(link):find("item:7005") then return { Values = { { "BM", 10 } } } end end
+function PawnIsItemAnUpgrade(item) return { { ScaleName = "Beast Mastery", PercentUpgrade = 0.123 } } end
+shownWorld = nil
+OpenMapAPI = {
+    IsStitched = function() return true end,
+    GetView = function() return 0.4, 0.6, 1.5 end,
+    WorldFromMap = function(mapID, x, y) return x + 1, y + 1 end,
+    ShowWorld = function(u, v, zoom) shownWorld = { u = u, v = v, zoom = zoom } end,
+}
+ForeverLevelingBiS_API = {
+    version = 2,
+    GetSpec = function() return "Beast Mastery" end,
+    GetWeights = function() return { agility = 1.0, stamina = 0.1, bogus = "text" } end,
+    GetGain = function(link) if tostring(link):find("item:5586") then return 12.5 end return 0 end,
+}
+"""
+
+
+def check_companions_section() -> None:
+    """Forever fork: the companions section reads the other addons' public APIs behind pcall."""
+    runtime, g, _ = load_addon("forever", before_addon=COMPANIONS_STUB)
+    event_dispatcher(g)(None, "PLAYER_LOGIN")
+    g.SlashCmdList["WOWMCP"]("reload")
+    snapshot = saved_character(g)
+    assert not values(snapshot["errors"]), values(snapshot["errors"])
+    companions = snapshot["companions"]
+    assert list(companions["sources"].values()) == ["whatsTraining", "foreverBiS", "auctionator", "pawn", "openMap"]
+    # What's Training: only trainable spells up to player level + 5 (level 20 -> 25).
+    training = values(companions["whatsTraining"])
+    assert len(training) == 25 and training[0]["name"] == "Spell 1" and training[-1]["level"] == 25
+    assert training[4]["cost"] == 50 and not any(t["name"] == "Known Spell" for t in training)
+    # Forever Leveling BiS: spec, numeric weights only, a gain per equipped item (slots 16-18 in the mock).
+    bis = companions["foreverBiS"]
+    assert bis["spec"] == "Beast Mastery" and bis["weights"]["agility"] == 1.0 and bis["weights"]["bogus"] is None
+    gains = values(bis["equippedGains"])
+    assert [(gain["slot"], gain["gainPct"]) for gain in gains] == [(16, 12.5), (17, 0), (18, 0)], [dict(gain) for gain in gains]
+    # Auctionator: only bag items it has a price for, asked with the WowMcp caller id.
+    prices = values(companions["auctionator"])
+    assert [(p["id"], p["price"], p["age"]) for p in prices] == [(2589, 15, 2)], [dict(p) for p in prices]
+    assert set(g.auctionatorCallers.values()) == {"WowMcp"}
+    # Pawn: the one bag item Pawn values, with the upgrade percent rounded.
+    pawn = values(companions["pawn"])
+    assert len(pawn) == 1 and pawn[0]["id"] == 7005, [dict(p) for p in pawn]
+    upgrade = values(pawn[0]["upgrades"])[0]
+    assert (upgrade["scale"], upgrade["pct"]) == ("Beast Mastery", 12), dict(upgrade)
+    assert companions["openMap"]["stitched"] is True and dict(companions["openMap"]["view"]) == {"u": 0.4, "v": 0.6, "zoom": 1.5}
+
+    # A broken integration drops only its own sub-table, without a section error.
+    runtime.execute("WT_API.GetSpells = function() error('boom') end")
+    g.SlashCmdList["WOWMCP"]("")
+    snapshot = saved_character(g)
+    assert not values(snapshot["errors"]), values(snapshot["errors"])
+    assert snapshot["companions"]["whatsTraining"] is None and snapshot["companions"]["pawn"] is not None
+
+
+INBOX_STUB = r"""
+timerAfter, tickers = {}, {}
+C_Timer = {
+    After = function(seconds, fn) timerAfter[#timerAfter + 1] = { seconds = seconds, fn = fn } end,
+    NewTicker = function(seconds, fn) tickers[#tickers + 1] = { seconds = seconds, fn = fn } end,
+}
+inCombat = false
+function InCombatLockdown() return inCombat end
+slotBodies, loadedSlots = {}, {}
+C_AddOns.GetNumAddOns = function() return 3 end
+C_AddOns.GetAddOnInfo = function(i) return ({ "WowMcp_S0001", "WowMcp_S0002", "SomeOtherAddon" })[i] end
+C_AddOns.EnableAddOn = function(name) end
+C_AddOns.LoadAddOn = function(name)
+    loadedSlots[#loadedSlots + 1] = name
+    local body = slotBodies[name]
+    if body then body() end
+    return true
+end
+tomTomWaypoints, tomTomRemoved = {}, {}
+TomTom = {
+    AddWaypoint = function(self, mapID, x, y, opts)
+        local uid = { mapID = mapID, x = x, y = y, title = opts.title, from = opts.from, crazy = opts.crazy }
+        tomTomWaypoints[#tomTomWaypoints + 1] = uid
+        return uid
+    end,
+    RemoveWaypoint = function(self, uid) tomTomRemoved[#tomTomRemoved + 1] = uid end,
+    ClearAllWaypoints = function(self) tomTomCleared = true end,
+}
+shownWorld = nil
+OpenMapAPI = {
+    IsStitched = function() return true end,
+    GetView = function() return 0.1, 0.2, 1 end,
+    WorldFromMap = function(mapID, x, y) return x + 1, y + 1 end,
+    ShowWorld = function(u, v, zoom) shownWorld = { u = u, v = v, zoom = zoom } end,
+}
+"""
+
+
+def check_inbox_slots() -> None:
+    """Forever fork: request slots are polled outside combat, each request runs once, and the dump reports them."""
+    runtime, g, _ = load_addon("forever", before_addon=INBOX_STUB)
+    on_event = event_dispatcher(g)
+    on_event(None, "PLAYER_LOGIN")
+    on_event(None, "PLAYER_ENTERING_WORLD")
+    # The ticker starts 8 s after entering the world.
+    assert g.timerAfter[1]["seconds"] == 8 and len(g.tickers) == 0
+    g.timerAfter[1]["fn"]()
+    assert g.tickers[1]["seconds"] == 15
+    tick = g.tickers[1]["fn"]
+    runtime.execute(r"""
+        slotBodies["WowMcp_S0001"] = function()
+            WowMcpInbox = { t = time(), reqs = {
+                { id = 1, kind = "waypoint", mapID = 1439, x = 37.3, y = 43.6, title = "Cave" },
+                { id = 2, kind = "ping" },
+                { id = 3, kind = "focus", mapID = 1439, x = 50, y = 50 },
+                { id = 1, kind = "waypoint", mapID = 1439, x = 1, y = 1 },
+                { id = 2 ^ 31, kind = "ping" },
+            } }
+        end
+        slotBodies["WowMcp_S0002"] = function()
+            WowMcpInbox = { t = time(), reqs = { { id = 4, kind = "clearwaypoints" } } }
+        end
+    """)
+    # Never in combat.
+    g.inCombat = True
+    tick()
+    assert len(g.loadedSlots) == 0
+    g.inCombat = False
+    tick()
+    assert list(g.loadedSlots.values()) == ["WowMcp_S0001"]
+    assert g.WowMcpInbox is None, "the inbox global must be cleared after a poll"
+    # The waypoint request reaches TomTom with 0-1 coordinates; its duplicate id is skipped, the huge id rejected.
+    assert len(g.tomTomWaypoints) == 1
+    waypoint = g.tomTomWaypoints[1]
+    assert (waypoint["mapID"], round(waypoint["x"], 4), round(waypoint["y"], 4)) == (1439, 0.373, 0.436), dict(waypoint)
+    assert (waypoint["title"], waypoint["from"], waypoint["crazy"]) == ("Cave", "WowMcp", True)
+    # The focus request glides the stitched map through OpenMapAPI.
+    assert dict(g.shownWorld) == {"u": 1.5, "v": 1.5, "zoom": 0.8}, dict(g.shownWorld)
+    assert list(g.WowMcpDB["inboxHandled"].values()) == [1, 2, 3]
+    # The next poll loads the next slot; clearwaypoints removes the waypoints set earlier by request id.
+    tick()
+    assert list(g.loadedSlots.values()) == ["WowMcp_S0001", "WowMcp_S0002"]
+    assert len(g.tomTomRemoved) == 1 and g.tomTomRemoved[1]["title"] == "Cave" and g.tomTomCleared is None
+    assert list(g.WowMcpDB["inboxHandled"].values()) == [1, 2, 3, 4]
+    # Out of slots: exactly one chat line telling the player to /reload.
+    before = len(g.chatlog)
+    tick()
+    tick()
+    chat = [str(line) for line in list(g.chatlog.values())[before:]]
+    assert sum("/reload" in line for line in chat) == 1, chat
+    # The dump reports the slot state.
+    g.SlashCmdList["WOWMCP"]("")
+    snapshot = saved_character(g)
+    assert not values(snapshot["errors"]), values(snapshot["errors"])
+    inbox = snapshot["inbox"]
+    assert (inbox["slotsTotal"], inbox["slotsUsed"], inbox["handledCount"]) == (2, 2, 4), dict(inbox)
+    assert inbox["lastInboxAt"] == 1794760000 and inbox["lastError"] is None, dict(inbox)
+
+
 def main() -> int:
     if len(sys.argv) < 2 or (sys.argv[1] != "lifecycle" and len(sys.argv) < 3):
         print("usage: run_addon.py modern|legacy|forever|dede <file.lua> or run_addon.py lifecycle")
@@ -2726,6 +2960,9 @@ def main() -> int:
         check_passed_guide_steps()
         check_legacy_scan_only_when_needed()
         check_realmless_key()
+        check_rxp_section()
+        check_companions_section()
+        check_inbox_slots()
         check_real_lifecycle()
         print("lifecycle from the real game: OK")
     return 0

@@ -277,10 +277,10 @@ func TestCorruptGoalsFileIsReportedNotOverwritten(t *testing.T) {
 	if data, _ := os.ReadFile(goalsPath); string(data) != "{this is not json" {
 		t.Errorf("the corrupt file was overwritten: %q", data)
 	}
-	// The writing tool has no read-only marker; the others do.
+	// The writing tools have no read-only marker; the others do.
 	tools, _ := cs.ListTools(ctx, nil)
 	for _, tl := range tools.Tools {
-		if (tl.Name == "wow_goal_set") == tl.Annotations.ReadOnlyHint {
+		if expectedWriters[tl.Name] == tl.Annotations.ReadOnlyHint {
 			t.Errorf("%s: ReadOnlyHint = %v", tl.Name, tl.Annotations.ReadOnlyHint)
 		}
 	}
