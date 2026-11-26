@@ -100,12 +100,13 @@ func (q *Queue) Request(kind string, fields map[string]any) (int64, error) {
 	if q.lastID >= maxID {
 		q.lastID = q.lastID%maxID + 100
 	}
-	req := map[string]any{"id": q.lastID, "kind": kind}
+	req := map[string]any{"id": q.lastID, "kind": kind, "_at": q.now().Unix()}
 	for k, v := range fields {
 		if k != "id" && k != "kind" {
 			req[k] = v
 		}
 	}
+	q.prunePending()
 	q.pending = append(q.pending, req)
 	if err := q.persist(); err != nil {
 		return 0, err
@@ -197,11 +198,47 @@ func (q *Queue) writeAllLocked(addOnsDir string) error {
 	return nil
 }
 
-// inboxLocked is the value every slot body assigns to WowMcpInbox.
+// pendingTTLSeconds is how long a request stays in the queue: long enough for the addon to poll it
+// (it polls at most every ~60 s), after which it is dropped so a stale post/clear is never re-sent and
+// cannot resurrect deleted state once the addon's bounded dedup (inboxHandled) forgets its id.
+const pendingTTLSeconds = 300
+
+// reqAt reads a request's creation time, tolerating the float64 a JSON round-trip leaves behind.
+func reqAt(req map[string]any) int64 {
+	switch v := req["_at"].(type) {
+	case int64:
+		return v
+	case float64:
+		return int64(v)
+	}
+	return 0
+}
+
+// prunePending drops requests older than the TTL.
+func (q *Queue) prunePending() {
+	cutoff := q.now().Unix() - pendingTTLSeconds
+	kept := q.pending[:0]
+	for _, req := range q.pending {
+		if at := reqAt(req); at == 0 || at >= cutoff {
+			kept = append(kept, req)
+		}
+	}
+	q.pending = kept
+}
+
+// inboxLocked is the value every slot body assigns to WowMcpInbox. The internal "_at" stamp is stripped
+// so only id, kind and the request fields reach the addon.
 func (q *Queue) inboxLocked() map[string]any {
+	q.prunePending()
 	reqs := make([]any, len(q.pending))
 	for i, req := range q.pending {
-		reqs[i] = req
+		clean := make(map[string]any, len(req))
+		for k, v := range req {
+			if k != "_at" {
+				clean[k] = v
+			}
+		}
+		reqs[i] = clean
 	}
 	got := make([]any, len(q.got))
 	for i, id := range q.got {
@@ -246,6 +283,7 @@ func (q *Queue) Flush(addOnsDir string, force bool) (bool, error) {
 	if err := q.load(); err != nil {
 		return false, err
 	}
+	q.prunePending()
 	fresh := q.now().Sub(q.lastWrite) < heartbeat
 	if !force && fresh && q.keyLocked() == q.lastKey {
 		return false, nil
