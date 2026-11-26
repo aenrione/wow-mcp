@@ -2569,6 +2569,71 @@ def check_inbox_slots() -> None:
     assert inbox["lastInboxAt"] == 1794760000 and inbox["lastError"] is None, dict(inbox)
 
 
+def check_board_button_and_keybind() -> None:
+    """Feature: /mcp boardbutton makes the WowMcpBoard macro (body /mcp board, no duplicate), and the options page has a
+    'Toggle board' key binding row that captures a key, cancels on Escape and clears on right click, sharing
+    WOWMCP_TOGGLEBOARD with the default Key Bindings UI."""
+    runtime, g, addon_ns, on_event = relog("", "modern")
+    runtime.execute(r"""
+        createdMacros = {}
+        function GetMacroIndexByName(name)
+            for i, m in ipairs(createdMacros) do if m.name == name then return i end end
+            return 0
+        end
+        function CreateMacro(name, icon, body, perChar)
+            createdMacros[#createdMacros + 1] = { name = name, icon = icon, body = body, perChar = perChar }
+            return #createdMacros
+        end
+        pickedUp = {}
+        function PickupMacro(index) pickedUp[#pickedUp + 1] = index end
+        function InCombatLockdown() return false end
+        boundKeys = {}
+        function GetBindingKey(cmd) for k, c in pairs(boundKeys) do if c == cmd then return k end end end
+        function SetBinding(key, action) boundKeys[key] = action return true end
+        function GetCurrentBindingSet() return 2 end
+        savedSet = 0
+        function SaveBindings(set) savedSet = set end
+        function GetBindingText(key) return key end
+        function IsShiftKeyDown() return false end
+        function IsControlKeyDown() return false end
+        function IsAltKeyDown() return false end
+    """)
+
+    # /mcp boardbutton makes the macro once and drops it on the cursor.
+    g.SlashCmdList["WOWMCP"]("boardbutton")
+    macros = values(g.createdMacros)
+    assert len(macros) == 1 and macros[0]["name"] == "WowMcpBoard" and macros[0]["body"] == "/mcp board", [dict(m) for m in macros]
+    assert macros[0]["icon"] == "INV_Misc_Note_01" and macros[0]["perChar"] is False, dict(macros[0])
+    assert "Created the WowMcpBoard macro" in last_chat(g) and list(g.pickedUp.values()) == [1], last_chat(g)
+    g.SlashCmdList["WOWMCP"]("boardbutton")  # a second call does not duplicate
+    assert len(values(g.createdMacros)) == 1 and "already exists" in last_chat(g), last_chat(g)
+
+    # The options page draws the keybind row (a Button, so it never joins the checkbox count).
+    g.SlashCmdList["WOWMCP"]("options")
+    frame = g.optionsCalls["category"]["frame"]
+    frame.scripts["OnShow"](frame)
+    boxes = [f for f in g.frames.values() if f.kind == "CheckButton"]
+    assert len(boxes) == len(addon_ns.Options.generalSwitches()) + len(addon_ns.Options.sectionSwitches())
+    key_button = next(f for f in g.frames.values() if f.frameName == "WowMcpBoardKeybindButton")
+    assert "not bound" in key_button.label, key_button.label
+    # Left click captures, a key press binds WOWMCP_TOGGLEBOARD and saves the binding set.
+    key_button.scripts["OnClick"](key_button, "LeftButton")
+    key_button.scripts["OnKeyDown"](key_button, "B")
+    assert g.boundKeys["B"] == "WOWMCP_TOGGLEBOARD" and g.savedSet == 2, (dict(g.boundKeys), g.savedSet)
+    assert "B" in key_button.label and g.GetBindingKey("WOWMCP_TOGGLEBOARD") == "B", key_button.label
+    # Escape cancels capture without changing the binding.
+    key_button.scripts["OnClick"](key_button, "LeftButton")
+    key_button.scripts["OnKeyDown"](key_button, "ESCAPE")
+    assert g.GetBindingKey("WOWMCP_TOGGLEBOARD") == "B", "Escape must not change the binding"
+    # Right click clears it; the row and the shared binding both go empty.
+    key_button.scripts["OnClick"](key_button, "RightButton")
+    assert g.GetBindingKey("WOWMCP_TOGGLEBOARD") is None and "not bound" in key_button.label, key_button.label
+    # The toggle keybind handler drives the board's public toggle and takes no dump.
+    g.reloaded = False
+    g.WowMcp_ToggleBoard()
+    assert not g.reloaded and len(g.forbiddenCalls) == 0
+
+
 def check_board_slots() -> None:
     """Forever fork: a board_post request fills WowMcpDB.board and the dump "board" section; a done tick persists
     and a board_clear empties it. The posts ride the same request-slot channel as the other inbox kinds."""
@@ -3218,6 +3283,7 @@ def main() -> int:
         check_companions_section()
         check_inbox_slots()
         check_board_slots()
+        check_board_button_and_keybind()
         check_json_encoder()
         check_refresh_strip()
         check_real_lifecycle()

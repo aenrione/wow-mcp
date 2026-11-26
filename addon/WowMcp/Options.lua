@@ -122,6 +122,7 @@ local function populate(parent)
         local column, row = math.floor((index - 1) / rows), (index - 1) % rows
         addCheckbox(parent, switch, 16 + column * COLUMN_WIDTH, y - row * ROW_HEIGHT)
     end
+    pcall(ns.OptionsKeybind.add, parent, y - rows * ROW_HEIGHT - 14)
 end
 
 -- Sets every checkbox from the current settings (the player may have used /mcp in the meantime).

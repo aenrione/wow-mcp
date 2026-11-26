@@ -17,6 +17,16 @@ local SOURCE = "WowMcp"
 local MAX_ITEMS_SHOWN = 12
 local ROW_WIDTH = 240
 
+-- Per-category accent: hex for the header label, rgb for the header rule and the row's left accent bar.
+local COLORS = {
+    sell  = { hex = "ffd200", r = 1.00, g = 0.82, b = 0.00 },
+    task  = { hex = "4ec9ff", r = 0.31, g = 0.79, b = 1.00 },
+    route = { hex = "5fe08a", r = 0.37, g = 0.88, b = 0.54 },
+    note  = { hex = "c6a6ff", r = 0.78, g = 0.65, b = 1.00 },
+}
+local DEFAULT_COLOR = { hex = "cccccc", r = 0.80, g = 0.80, b = 0.80 }
+local function colorOf(name) return COLORS[name] or DEFAULT_COLOR end
+
 local rows, headers = {}, {}   -- pools reused across refreshes
 local rowUsed, headerUsed = 0, 0
 
@@ -66,10 +76,18 @@ local function onHyperlinkClick(_, link, text, button)
 end
 
 local function onHyperlinkEnter(self, link)
-    if not (GameTooltip and link:find("^item:")) then return end
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    pcall(GameTooltip.SetHyperlink, GameTooltip, link)
-    GameTooltip:Show()
+    if not GameTooltip then return end
+    if link:find("^item:") then
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        pcall(GameTooltip.SetHyperlink, GameTooltip, link)
+        GameTooltip:Show()
+    elseif link:find("^" .. LINK_TYPE .. ":") then
+        local x, y = link:match("^" .. LINK_TYPE .. ":%d+:([%-%d.]+):([%-%d.]+)")
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Ruta sugerida")
+        GameTooltip:AddLine(("(%s, %s) - clic para fijar waypoint"):format(x or "?", y or "?"), 0.7, 0.7, 0.7)
+        GameTooltip:Show()
+    end
 end
 
 local function onHyperlinkLeave()
@@ -107,7 +125,15 @@ end
 
 local function makeRow(child)
     local row = CreateFrame("Frame", nil, child)
-    row:SetWidth(ROW_WIDTH)
+    row:SetSize(ROW_WIDTH, 28)
+    row.stripe = row:CreateTexture(nil, "BACKGROUND")
+    row.stripe:SetPoint("TOPLEFT", row, "TOPLEFT", -2, 1)
+    row.stripe:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 2, -3)
+    row.stripe:SetColorTexture(1, 1, 1, 0.04)
+    row.accent = row:CreateTexture(nil, "ARTWORK")
+    row.accent:SetWidth(2)
+    row.accent:SetPoint("TOPLEFT", row, "TOPLEFT", -4, 1)
+    row.accent:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", -4, -3)
     row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
     if row.check.SetSize then row.check:SetSize(18, 18) end
     row.check:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
@@ -125,9 +151,13 @@ end
 
 local function makeHeader(child)
     local h = CreateFrame("Frame", nil, child)
-    h:SetWidth(ROW_WIDTH)
-    h.text = h:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    h.text:SetPoint("TOPLEFT", h, "TOPLEFT", 0, 0)
+    h:SetSize(ROW_WIDTH, 18)
+    h.text = h:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    h.text:SetPoint("BOTTOMLEFT", h, "BOTTOMLEFT", 0, 3)
+    h.rule = h:CreateTexture(nil, "ARTWORK")
+    h.rule:SetHeight(1)
+    h.rule:SetPoint("BOTTOMLEFT", h, "BOTTOMLEFT", 0, 0)
+    h.rule:SetPoint("BOTTOMRIGHT", h, "BOTTOMRIGHT", -2, 0)
     return h
 end
 
@@ -136,11 +166,13 @@ function BoardEntry.drawHeader(child, name, yOffset)
     headerUsed = headerUsed + 1
     local h = headers[headerUsed]
     if not h then h = makeHeader(child); headers[headerUsed] = h end
+    local c = colorOf(name)
     h:ClearAllPoints()
     h:SetPoint("TOPLEFT", child, "TOPLEFT", 6, yOffset)
-    h.text:SetText("|cff4ec9ff" .. tostring(name):upper() .. "|r")
+    h.text:SetText("|cff" .. c.hex .. tostring(name):upper() .. "|r")
+    h.rule:SetColorTexture(c.r, c.g, c.b, 0.5)
     h:Show()
-    return yOffset - 16
+    return yOffset - 22
 end
 
 -- Draws one entry row at the given y offset in the scroll child; returns the next y offset.
@@ -149,7 +181,10 @@ function BoardEntry.draw(child, entry, yOffset)
     local row = rows[rowUsed]
     if not row then row = makeRow(child); rows[rowUsed] = row end
     row:ClearAllPoints()
-    row:SetPoint("TOPLEFT", child, "TOPLEFT", 6, yOffset)
+    row:SetPoint("TOPLEFT", child, "TOPLEFT", 10, yOffset)
+    local c = colorOf(entry.category)
+    row.accent:SetColorTexture(c.r, c.g, c.b, entry.done and 0.25 or 0.9)
+    row.stripe:SetShown(rowUsed % 2 == 0)
     if entry.category == "task" then
         row.check:Show()
         row.check:SetChecked(entry.done and true or false)
@@ -163,9 +198,14 @@ function BoardEntry.draw(child, entry, yOffset)
     row.title:SetText(mark .. (type(entry.title) == "string" and entry.title or "(untitled)") .. "|r")
     local body = bodyText(entry)
     row.body:SetText(body)
+    row.body:SetShown(body ~= "")
     row:Show()
-    local _, lineBreaks = body:gsub("\n", "")
-    return yOffset - 16 - ((lineBreaks + 1) * 11) - 6
+    -- Measure the wrapped text so a long title or body never overflows the row or overlaps the next one.
+    local titleH = math.max(10, row.title:GetStringHeight() or 10)
+    local bodyH = (body ~= "" and math.max(10, row.body:GetStringHeight() or 10)) or 0
+    local rowH = 1 + titleH + (bodyH > 0 and (2 + bodyH) or 0) + 6
+    row:SetHeight(rowH)
+    return yOffset - rowH
 end
 
 -- Hides the pooled rows and headers left unused by this refresh.

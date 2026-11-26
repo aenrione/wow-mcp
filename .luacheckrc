@@ -34,6 +34,9 @@ read_globals = {
     -- constants
     "ATTACHMENTS_MAX_RECEIVE", "MAX_ACCOUNT_MACROS", "MAX_QUESTLOG_QUESTS", "NUM_BAG_SLOTS", "NUM_BANKBAGSLOTS",
     "NUM_PET_ACTION_SLOTS", "NUM_TOTAL_EQUIPPED_BAG_SLOTS",
+    -- key bindings and macros (Keybind row and the "Create board button" helper)
+    "GetBindingKey", "GetBindingText", "SetBinding", "SaveBindings", "GetCurrentBindingSet",
+    "CreateMacro", "GetMacroIndexByName", "PickupMacro", "IsShiftKeyDown", "IsControlKeyDown", "IsAltKeyDown",
     -- classic and mainline API functions
     "GetBuildInfo", "GetContainerItemInfo", "hooksecurefunc", "GetCursorPosition", "GetFactionInfo", "GetMacroInfo", "GetMerchantNumItems", "GetMoney",
     "GetNumFactions", "GetNumMacros", "GetNumQuestLeaderBoards", "GetNumQuestLogEntries", "GetNumSkillLines",

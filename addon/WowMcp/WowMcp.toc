@@ -81,8 +81,10 @@ Panel.lua
 BoardEntry.lua
 Board.lua
 Keybind.lua
+BoardButton.lua
 MinimapButton.lua
 AuctionTooltip.lua
+OptionsKeybind.lua
 Options.lua
 WowMcp.lua
 Commands.lua

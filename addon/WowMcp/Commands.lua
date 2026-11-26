@@ -13,6 +13,7 @@ local HELP = {
     "/mcp status - this character's last dump, dump time, disabled sections and errors",
     "/mcp panel - show or hide the panel with the Save button",
     "/mcp board - show or hide the agent board (notes, tasks and routes an MCP agent posted); item and coordinate links are clickable",
+    "/mcp boardbutton - make the WowMcpBoard macro (body /mcp board) to drag onto your action bar; you can also bind a key in /mcp options",
     "/mcp played on|off - whether to request played time after login (for progress statistics)",
     "/mcp note <text> - note for the assistant in the dump (e.g. what you plan today); bare /mcp note removes it",
     "/mcp quest <id or name> - where a quest starts and ends, from the Questie database you have installed; the answer also goes into the dump."
@@ -237,6 +238,10 @@ local COMMANDS = {
     ["?"] = showHelp,
     panel = Panel.toggle,
     board = function() ns.Board.toggle() end,
+    boardbutton = function()
+        local _, message = ns.BoardButton.create()
+        if message then chat(message) end
+    end,
     played = setPlayedTracking,
     ahtip = setAuctionTooltip,
     minimap = setMinimapButton,

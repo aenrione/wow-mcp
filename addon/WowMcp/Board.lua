@@ -144,15 +144,10 @@ end
 -- After new entries: show the board, or hint once, so the player notices what the agent left.
 function Board.onPosted(posted)
     if posted == 0 then return end
-    local settings = Store.settings()
     local b = store()
-    if settings.boardHidden == nil and not b.hinted then
+    if not b.hinted then
         b.hinted = true
         chat("Your agent left notes on the board: /mcp board to see them.")
-    end
-    if board and not settings.boardHidden then
-        pcall(Board.create)
-        board:Show()
     end
     Board.refresh()
 end
@@ -245,6 +240,21 @@ local function addChrome(f)
             pcall(tomtom.ClearAllWaypoints, tomtom)
         end
     end)
+    local save = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    save:SetSize(70, 20)
+    save:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 8)
+    save:SetText("Save")
+    save:SetScript("OnClick", function()
+        pcall(ns.Snapshot.dump, "board")
+        ReloadUI()
+    end)
+    save.tooltip = "Save character state and reload (same as /mcp reload) so an agent sees fresh data."
+    save:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine(self.tooltip, nil, nil, nil, true)
+        GameTooltip:Show()
+    end)
+    save:SetScript("OnLeave", function() GameTooltip:Hide() end)
     f.titleText = title
 end
 
@@ -305,6 +315,7 @@ function Board.create()
     addChrome(f)
     addScroll(f)
     f:SetScript("OnShow", Board.refresh)
+    f:Hide()
     board = f
     Board.refresh()
     return f
@@ -317,14 +328,14 @@ function Board.toggle()
         return
     end
     local settings = Store.settings()
-    if settings.boardHidden then
-        settings.boardHidden = nil
-        f:Show()
-        chat("Board visible. You can drag it with the mouse.")
-    else
+    if f:IsShown() then
         settings.boardHidden = true
         f:Hide()
         chat("Board hidden. /mcp board shows it again.")
+    else
+        settings.boardHidden = nil
+        f:Show()
+        chat("Board visible. You can drag it with the mouse.")
     end
 end
 
