@@ -287,6 +287,31 @@
                 "description": "required category of the entry: one of sell, task, route, note",
                 "type": "string"
               },
+              "goal": {
+                "additionalProperties": false,
+                "description": "optional inventory goal that auto-completes the entry: the addon marks it done when the item count reaches the target, and un-marks it if the count changes back (like RXP's to-do list)",
+                "properties": {
+                  "item": {
+                    "description": "itemID the goal tracks against the player's inventory",
+                    "type": "integer"
+                  },
+                  "mode": {
+                    "description": "sell (done when the owned count drops to qty, usually 0), collect (done when bag count reaches qty) or bank (done when the banked count reaches qty); default collect",
+                    "type": "string"
+                  },
+                  "qty": {
+                    "description": "target quantity: for collect/bank the amount to reach, for sell the amount to sell down to (default 0)",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "item"
+                ],
+                "type": [
+                  "null",
+                  "object"
+                ]
+              },
               "items": {
                 "description": "optional item IDs rendered as clickable item links in the entry",
                 "items": {

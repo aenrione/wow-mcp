@@ -133,41 +133,7 @@ local function countSuffix(itemID)
     return (" |c%s\195\151%d|r"):format(color, n)
 end
 
--- Renders a copper amount as coloured digits followed by the client's coin icon per denomination.
-local COIN_ICON = {
-    g = "Interface\\MoneyFrame\\UI-GoldIcon",
-    s = "Interface\\MoneyFrame\\UI-SilverIcon",
-    c = "Interface\\MoneyFrame\\UI-CopperIcon",
-}
-local function coinPart(amount, hex, kind)
-    return ("|cff%s%d|r|T%s:12:12:2:0|t"):format(hex, amount, COIN_ICON[kind])
-end
-local function toCoin(copper)
-    local g, s, c = math.floor(copper / 10000), math.floor((copper % 10000) / 100), copper % 100
-    local out = {}
-    if g > 0 then out[#out + 1] = coinPart(g, "ffd700", "g") end
-    if s > 0 then out[#out + 1] = coinPart(s, "d0d0d8", "s") end
-    if c > 0 or #out == 0 then out[#out + 1] = coinPart(c, "eda55f", "c") end
-    return table.concat(out, " ")
-end
-
--- Rewrites money expressions (1g66s50c, 9s73, 65s, 1s30, ...) into coin strings; two-part forms first so
--- "9s73" reads as 9 silver 73 copper, not just "9 silver". Applied only to plain text, never to links.
-local function formatMoney(text)
-    if type(text) ~= "string" or text == "" then return text end
-    -- toCoin emits coloured digits + |T coin icons; that output has no "digit+lowercase g/s/c" run, so the
-    -- passes below never re-process an already-formatted amount.
-    text = text:gsub("(%d+)g(%d+)s(%d+)c", function(g, s, c) return toCoin(g * 10000 + s * 100 + c) end)
-    text = text:gsub("(%d+)g(%d+)s", function(g, s) return toCoin(g * 10000 + s * 100) end)
-    text = text:gsub("(%d+)s(%d+)c", function(s, c) return toCoin(s * 100 + c) end)
-    text = text:gsub("(%d+)g(%d+)", function(g, s) return toCoin(g * 10000 + s * 100) end)
-    text = text:gsub("(%d+)s(%d+)", function(s, c) return toCoin(s * 100 + c) end)
-    text = text:gsub("(%d+)g", function(g) return toCoin(g * 10000) end)
-    text = text:gsub("(%d+)s", function(s) return toCoin(s * 100) end)
-    text = text:gsub("(%d+)c", function(c) return toCoin(tonumber(c)) end)
-    return text
-end
-BoardEntry.formatMoney = formatMoney
+local formatMoney = ns.BoardMoney.format
 
 -- Texture of an item's icon, for the row's left gutter.
 local function itemIcon(itemID)
@@ -182,6 +148,23 @@ local function itemIcon(itemID)
         if ok and icon then return icon end
     end
     return nil
+end
+
+-- A coloured progress tag for an entry's inventory goal: "sell 7 left", "bank 10/25", "collect 3/25".
+local function goalTag(entry)
+    local g = entry.goal
+    if type(g) ~= "table" or type(ns.Board) ~= "table" or type(ns.Board.goalState) ~= "function" then return nil end
+    local done, have, target = ns.Board.goalState(g)
+    if done == nil then return nil end
+    local label
+    if g.mode == "sell" then
+        label = ("sell: %d left"):format(math.max(0, have))
+    elseif g.mode == "bank" then
+        label = ("bank: %d/%d"):format(have, target)
+    else
+        label = ("collect: %d/%d"):format(have, target)
+    end
+    return ("|c%s%s|r"):format(done and "ff5fe08a" or "ffe6cc80", label)
 end
 
 -- Resolves an entry's items into { id, name, token (link + ×N), icon }, capped at MAX_ITEMS_SHOWN.
@@ -333,8 +316,11 @@ function BoardEntry.draw(child, entry, yOffset)
             if ok then titleText = nt; placed[i] = true end
         end
     end
-    row.title:SetText(mark .. titleText .. "|r")
+    local check = entry.done and "|cff5fe08a\226\156\148|r " or ""
+    row.title:SetText(check .. mark .. titleText .. "|r")
     local body = buildBody(entry, items, placed)
+    local tag = goalTag(entry)
+    if tag then body = tag .. (body ~= "" and ("\n" .. body) or "") end
     row.body:SetText(body)
     row.body:SetShown(body ~= "")
     row:Show()

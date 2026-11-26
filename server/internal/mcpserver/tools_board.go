@@ -25,16 +25,25 @@ const maxBoardEntries = 25
 
 var boardCategories = map[string]bool{"sell": true, "task": true, "route": true, "note": true}
 
-type boardEntryArg struct {
-	Category      string  `json:"category" jsonschema:"required category of the entry: one of sell, task, route, note"`
-	Title         string  `json:"title" jsonschema:"required short title line shown in the board"`
-	Body          string  `json:"body,omitempty" jsonschema:"optional longer description shown under the title"`
-	Items         []int   `json:"items,omitempty" jsonschema:"optional item IDs rendered as clickable item links in the entry"`
-	MapID         int     `json:"mapID,omitempty" jsonschema:"optional uiMapID for a clickable coordinate link that drops a TomTom waypoint (a zone name is NOT resolved here)"`
-	X             float64 `json:"x,omitempty" jsonschema:"optional map X coordinate in 0..100 (required when mapID is given)"`
-	Y             float64 `json:"y,omitempty" jsonschema:"optional map Y coordinate in 0..100 (required when mapID is given)"`
-	WaypointTitle string  `json:"waypointTitle,omitempty" jsonschema:"optional label for the TomTom waypoint of the coordinate link"`
+type boardGoalArg struct {
+	Item int    `json:"item" jsonschema:"itemID the goal tracks against the player's inventory"`
+	Qty  int    `json:"qty,omitempty" jsonschema:"target quantity: for collect/bank the amount to reach, for sell the amount to sell down to (default 0)"`
+	Mode string `json:"mode,omitempty" jsonschema:"sell (done when the owned count drops to qty, usually 0), collect (done when bag count reaches qty) or bank (done when the banked count reaches qty); default collect"`
 }
+
+type boardEntryArg struct {
+	Category      string        `json:"category" jsonschema:"required category of the entry: one of sell, task, route, note"`
+	Title         string        `json:"title" jsonschema:"required short title line shown in the board"`
+	Body          string        `json:"body,omitempty" jsonschema:"optional longer description shown under the title"`
+	Items         []int         `json:"items,omitempty" jsonschema:"optional item IDs rendered as clickable item links in the entry"`
+	Goal          *boardGoalArg `json:"goal,omitempty" jsonschema:"optional inventory goal that auto-completes the entry: the addon marks it done when the item count reaches the target, and un-marks it if the count changes back (like RXP's to-do list)"`
+	MapID         int           `json:"mapID,omitempty" jsonschema:"optional uiMapID for a clickable coordinate link that drops a TomTom waypoint (a zone name is NOT resolved here)"`
+	X             float64       `json:"x,omitempty" jsonschema:"optional map X coordinate in 0..100 (required when mapID is given)"`
+	Y             float64       `json:"y,omitempty" jsonschema:"optional map Y coordinate in 0..100 (required when mapID is given)"`
+	WaypointTitle string        `json:"waypointTitle,omitempty" jsonschema:"optional label for the TomTom waypoint of the coordinate link"`
+}
+
+var boardGoalModes = map[string]bool{"sell": true, "collect": true, "bank": true}
 
 type boardPostArgs struct {
 	Entries []boardEntryArg `json:"entries" jsonschema:"required list of board entries to post (max 25 per call)"`
@@ -78,7 +87,34 @@ func boardEntryFields(e boardEntryArg) (map[string]any, error) {
 		}
 		entry["coords"] = coords
 	}
+	if goal, err := boardGoalFields(e.Goal); err != nil {
+		return nil, err
+	} else if goal != nil {
+		entry["goal"] = goal
+	}
 	return entry, nil
+}
+
+// boardGoalFields validates an optional inventory goal and returns the map the addon's Board.post expects.
+func boardGoalFields(g *boardGoalArg) (map[string]any, error) {
+	if g == nil {
+		return nil, nil
+	}
+	if g.Item <= 0 {
+		return nil, fmt.Errorf("a board goal needs a positive item id")
+	}
+	mode := strings.ToLower(strings.TrimSpace(g.Mode))
+	if mode == "" {
+		mode = "collect"
+	}
+	if !boardGoalModes[mode] {
+		return nil, fmt.Errorf("goal mode %q is not one of sell, collect, bank", g.Mode)
+	}
+	qty := g.Qty
+	if qty < 0 {
+		qty = 0
+	}
+	return map[string]any{"item": g.Item, "qty": qty, "mode": mode}, nil
 }
 
 // boardTools: agent-to-player board posts (through the slot channel) and the readback of the board section.

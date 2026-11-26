@@ -7,16 +7,11 @@
 -- done; the state is kept locally in WowMcpDB.board. The agent reads it back through the dump "board" section.
 
 local _, ns = ...
-local plain = ns.Compat.plain
 local Store, chat = ns.Store, ns.chat
 
 local Board = {}
 ns.Board = Board
 
-local MAX_ENTRIES = 100
-local MAX_ITEMS = 20
-local MAX_TITLE = 120
-local MAX_BODY = 500
 local MAX_SECTION_ENTRIES = 40
 local CATEGORIES = { "sell", "task", "route", "note" }
 
@@ -25,14 +20,6 @@ local boardEventsOn = false
 
 local sectionRegistered = false
 
-local function store()
-    if type(WowMcpDB.board) ~= "table" then WowMcpDB.board = {} end
-    local b = WowMcpDB.board
-    if type(b.entries) ~= "table" then b.entries = {} end
-    if type(b.order) ~= "table" then b.order = {} end
-    if type(b.seq) ~= "number" then b.seq = 0 end
-    return b
-end
 
 -- The board, read-only: nil when nothing was ever posted (so a plain dump creates no board table).
 local function readBoard()
@@ -41,117 +28,7 @@ local function readBoard()
     return b
 end
 
-local function clamp(value, max)
-    local text = plain(value)
-    if type(text) ~= "string" then return nil end
-    if #text > max then text = text:sub(1, max) end
-    return text
-end
 
-local function category(value)
-    local text = plain(value)
-    if type(text) ~= "string" or text == "" then return "note" end
-    return text:lower()
-end
-
-local function itemList(value)
-    if type(value) ~= "table" then return nil end
-    local out = {}
-    for _, id in ipairs(value) do
-        local n = tonumber(plain(id))
-        if n and n > 0 and n % 1 == 0 then
-            out[#out + 1] = n
-            if #out >= MAX_ITEMS then break end
-        end
-    end
-    return #out > 0 and out or nil
-end
-
-local function coords(value)
-    if type(value) ~= "table" then return nil end
-    local mapID, x, y = tonumber(plain(value.mapID)), tonumber(plain(value.x)), tonumber(plain(value.y))
-    if not (mapID and x and y) then return nil end
-    return { mapID = mapID, x = x, y = y, title = clamp(value.title, MAX_TITLE) }
-end
-
-local function assignId(b)
-    b.seq = b.seq + 1
-    return "a" .. b.seq
-end
-
-local function bound(b)
-    while #b.order > MAX_ENTRIES do
-        local oldest = table.remove(b.order, 1)
-        b.entries[oldest] = nil
-    end
-end
-
--- Merges or appends agent entries; an entry id already on the board is updated in place (idempotent),
--- keeping its done tick and creation time. Returns how many entries were posted.
-function Board.post(entries)
-    if type(entries) ~= "table" then return 0 end
-    local b = store()
-    local posted = 0
-    for _, raw in ipairs(entries) do
-        if type(raw) == "table" then
-            local id = plain(raw.id)
-            if type(id) ~= "string" or id == "" then id = assignId(b) end
-            local existing = b.entries[id]
-            local entry = existing or { id = id, at = time(), source = "agent", done = false }
-            entry.category = category(raw.category)
-            entry.title = clamp(raw.title, MAX_TITLE) or "(untitled)"
-            entry.body = clamp(raw.body, MAX_BODY)
-            entry.items = itemList(raw.items)
-            entry.coords = coords(raw.coords)
-            if not existing then
-                b.entries[id] = entry
-                b.order[#b.order + 1] = id
-            end
-            posted = posted + 1
-        end
-    end
-    bound(b)
-    Board.ensureSection()
-    Board.onPosted(posted)
-    return posted
-end
-
--- Removes the given entry ids, or every entry when ids is nil/empty (a server "clear").
-function Board.clear(ids)
-    local b = store()
-    if type(ids) == "table" and #ids > 0 then
-        local drop = {}
-        for _, id in ipairs(ids) do if type(plain(id)) == "string" then drop[id] = true end end
-        local kept = {}
-        for _, id in ipairs(b.order) do
-            if drop[id] then b.entries[id] = nil else kept[#kept + 1] = id end
-        end
-        b.order = kept
-    else
-        b.entries, b.order = {}, {}
-    end
-    Board.refresh()
-end
-
-function Board.setDone(id, done)
-    local b = store()
-    local entry = b.entries[id]
-    if type(entry) == "table" then
-        entry.done = done and true or false
-        Board.refresh()
-    end
-end
-
--- After new entries: show the board, or hint once, so the player notices what the agent left.
-function Board.onPosted(posted)
-    if posted == 0 then return end
-    local b = store()
-    if not b.hinted then
-        b.hinted = true
-        chat("Your agent left notes on the board: /mcp board to see them.")
-    end
-    Board.refresh()
-end
 
 -- Entries in board order, newest last.
 local function orderedEntries()
@@ -173,7 +50,12 @@ local function collect()
     for _, entry in ipairs(entries) do
         byCategory[entry.category] = (byCategory[entry.category] or 0) + 1
         if #list < MAX_SECTION_ENTRIES then
-            list[#list + 1] = { id = entry.id, category = entry.category, title = entry.title, done = entry.done }
+            local row = { id = entry.id, category = entry.category, title = entry.title, done = entry.done }
+            if type(entry.goal) == "table" then
+                local gdone, have, target = ns.BoardGoals.state(entry.goal)
+                row.goal = { item = entry.goal.item, mode = entry.goal.mode, target = target, have = have, met = gdone }
+            end
+            list[#list + 1] = row
         end
     end
     return { count = #entries, byCategory = byCategory, entries = list }
@@ -304,6 +186,7 @@ end
 -- Redraws the list from the current entries, grouped by category.
 function Board.refresh()
     if not board or not board.list then return end
+    ns.BoardGoals.evaluate()
     local entries = orderedEntries()
     board.empty:SetText(#entries == 0 and "No board entries yet. An agent posts with wow_board_post." or "")
     local groups, order = {}, {}
@@ -350,9 +233,14 @@ function Board.create()
     -- player holds, like RXP's to-do list. Registered lazily here so the dump fixtures stay unchanged.
     if ns.Events and not boardEventsOn then
         boardEventsOn = true
-        ns.Events.on("BAG_UPDATE_DELAYED", function()
+        local onInventory = function()
+            local changed = ns.BoardGoals.evaluate()
             if board and board:IsShown() then Board.refresh() end
-        end)
+            return changed
+        end
+        ns.Events.on("BAG_UPDATE_DELAYED", onInventory)
+        ns.Events.on("PLAYERBANKSLOTS_CHANGED", onInventory)
+        ns.Events.on("BANKFRAME_CLOSED", onInventory)
     end
     Board.refresh()
     if Store.settings().boardCollapsed then Board.setCollapsed(true) end
