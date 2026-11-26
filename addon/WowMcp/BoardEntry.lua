@@ -36,13 +36,28 @@ function BoardEntry.reset()
 end
 
 -- Clickable item link text; the client is asked to load the item data so its name resolves next refresh.
+-- Quality colour of an item (green default so a reference always reads as a clickable item).
+local function itemHex(itemID)
+    local get = _G.GetItemInfo or (_G.C_Item and _G.C_Item.GetItemInfo)
+    local quality
+    if type(get) == "function" then
+        local ok, q = pcall(function() return select(3, get(itemID)) end)
+        if ok then quality = q end
+    end
+    local qc = _G.ITEM_QUALITY_COLORS
+    if quality and qc and qc[quality] and type(qc[quality].hex) == "string" then
+        return qc[quality].hex
+    end
+    return "ff40d050"
+end
+
 function BoardEntry.itemLink(itemID)
     itemID = tonumber(itemID)
     if not itemID then return nil end
     callFirst({ "C_Item.RequestLoadItemDataByID" }, itemID)
     local name = firstValue({ "C_Item.GetItemInfo", "GetItemInfo" }, itemID)
     if type(name) ~= "string" or name == "" then name = "item:" .. itemID end
-    return ("|cffffffff|Hitem:%d::::::::::::::|h[%s]|h|r"):format(itemID, name)
+    return ("|c%s|Hitem:%d::::::::::::::|h[%s]|h|r"):format(itemHex(itemID), itemID, name)
 end
 
 -- Clickable coordinate link text, or plain coordinates when there is no map id.
@@ -115,28 +130,30 @@ local function countSuffix(itemID)
     return (" |c%s\195\151%d|r"):format(color, n)
 end
 
--- Renders a copper amount with the client's coin textures, falling back to coloured g/s/c text.
+-- Renders a copper amount as coloured digits followed by the client's coin icon per denomination.
+local COIN_ICON = {
+    g = "Interface\\MoneyFrame\\UI-GoldIcon",
+    s = "Interface\\MoneyFrame\\UI-SilverIcon",
+    c = "Interface\\MoneyFrame\\UI-CopperIcon",
+}
+local function coinPart(amount, hex, kind)
+    return ("|cff%s%d|r|T%s:12:12:2:0|t"):format(hex, amount, COIN_ICON[kind])
+end
 local function toCoin(copper)
-    local f = _G.GetCoinTextureString
-    if type(f) == "function" then
-        local ok, s = pcall(f, copper)
-        if ok and type(s) == "string" and s ~= "" then return s end
-    end
     local g, s, c = math.floor(copper / 10000), math.floor((copper % 10000) / 100), copper % 100
     local out = {}
-    if g > 0 then out[#out + 1] = "|cffffd700" .. g .. "g|r" end
-    if s > 0 then out[#out + 1] = "|cffc7c7cf" .. s .. "s|r" end
-    if c > 0 or #out == 0 then out[#out + 1] = "|cffeda55f" .. c .. "c|r" end
-    return table.concat(out)
+    if g > 0 then out[#out + 1] = coinPart(g, "ffd700", "g") end
+    if s > 0 then out[#out + 1] = coinPart(s, "d0d0d8", "s") end
+    if c > 0 or #out == 0 then out[#out + 1] = coinPart(c, "eda55f", "c") end
+    return table.concat(out, " ")
 end
 
 -- Rewrites money expressions (1g66s50c, 9s73, 65s, 1s30, ...) into coin strings; two-part forms first so
 -- "9s73" reads as 9 silver 73 copper, not just "9 silver". Applied only to plain text, never to links.
 local function formatMoney(text)
     if type(text) ~= "string" or text == "" then return text end
-    -- Only when the coin textures are available: their |T...|t output can't be re-matched by the passes below,
-    -- unlike a coloured-text fallback, so money is never double-processed.
-    if type(_G.GetCoinTextureString) ~= "function" then return text end
+    -- toCoin emits coloured digits + |T coin icons; that output has no "digit+lowercase g/s/c" run, so the
+    -- passes below never re-process an already-formatted amount.
     text = text:gsub("(%d+)g(%d+)s(%d+)c", function(g, s, c) return toCoin(g * 10000 + s * 100 + c) end)
     text = text:gsub("(%d+)g(%d+)s", function(g, s) return toCoin(g * 10000 + s * 100) end)
     text = text:gsub("(%d+)s(%d+)c", function(s, c) return toCoin(s * 100 + c) end)
