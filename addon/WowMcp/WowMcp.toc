@@ -10,6 +10,8 @@
 # Foundations: each file depends only on the files above it.
 Core.lua
 Compat.lua
+Json.lua
+LibDeflate.lua
 Maps.lua
 QuestDb.lua
 Waypoints.lua
@@ -20,9 +22,11 @@ TalentGrid.lua
 TraitTree.lua
 Store.lua
 Events.lua
+Strip.lua
 Timing.lua
 LogoutGuard.lua
 Snapshot.lua
+Refresh.lua
 Periods.lua
 LegacyDiscovery.lua
 Inbox.lua

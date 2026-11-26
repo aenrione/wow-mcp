@@ -119,6 +119,8 @@ func goldenCases() []goldenCase {
 		tc("wow_wiki_read", "off", args{"slug": "gold-routes"}),
 		tc("wow_wiki_search", "off", args{"query": "gold"}),
 		tc("wow_wiki_write", "off", args{"slug": "gold-routes", "content": "# Gold routes"}),
+		tc("wow_refresh", "off", args{"timeoutSeconds": 5, "sections": []any{"bags", "character"}, "full": true}),
+		tc("wow_live", "off", args{"section": "bags", "character": charKnown}),
 	)
 
 	add(

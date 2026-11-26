@@ -34,6 +34,7 @@ import (
 	"wowmcp/internal/slots"
 	"wowmcp/internal/snapshot"
 	"wowmcp/internal/storage"
+	"wowmcp/internal/strip"
 	"wowmcp/internal/wiki"
 )
 
@@ -243,8 +244,36 @@ func foreverOption(store *storage.Store, addonsDir, wikiDir, exportDir string) f
 			log.Print("WARN: request slots disabled: ", err)
 			return
 		}
-		c.Slots = slots.Engine{Queue: &slots.Queue{File: filepath.Join(ownDir(), "slots.json")}, AddOnsDir: addonsDir}
+		engine := slots.Engine{Queue: &slots.Queue{File: filepath.Join(ownDir(), "slots.json")}, AddOnsDir: addonsDir}
+		c.Slots = engine
+		c.LiveData = startLiveChannel(engine)
 	}
+}
+
+// startLiveChannel starts the realtime strip pipeline: a watcher on the game's Screenshots folder
+// (derived from the AddOns dir: <client>/Interface/AddOns → <client>/Screenshots) decodes strip
+// screenshots into the live store, feeds acknowledged message ids back into the slot inbox, and a
+// heartbeat keeps the slot bodies stamped so the addon sees the server as alive.
+func startLiveChannel(engine slots.Engine) *strip.LiveStore {
+	live := &strip.LiveStore{}
+	dir := filepath.Join(filepath.Dir(filepath.Dir(engine.AddOnsDir)), "Screenshots")
+	watcher := &strip.Watcher{Dir: dir, Got: engine.Queue, OnMessage: func(payload []byte) {
+		if err := live.Set(payload); err != nil {
+			log.Print("WARN: live payload: ", err)
+		}
+		if _, err := engine.Flush(true); err != nil {
+			log.Print("WARN: slot ack flush: ", err)
+		}
+	}}
+	go watcher.Run(context.Background())
+	go func() {
+		for range time.Tick(30 * time.Second) {
+			if _, err := engine.Flush(false); err != nil {
+				log.Print("WARN: slot heartbeat: ", err)
+			}
+		}
+	}()
+	return live
 }
 
 // newServer assembles the MCP server from the snapshot store and the freshness policy. Shared by main and tests.

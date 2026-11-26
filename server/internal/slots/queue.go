@@ -32,6 +32,7 @@ type Queue struct {
 	loaded    bool
 	lastID    int64
 	pending   []map[string]any
+	got       []int64
 	lastWrite time.Time
 	lastKey   string
 }
@@ -202,12 +203,37 @@ func (q *Queue) inboxLocked() map[string]any {
 	for i, req := range q.pending {
 		reqs[i] = req
 	}
-	return map[string]any{"t": q.now().Unix(), "reqs": reqs, "got": []any{}}
+	got := make([]any, len(q.got))
+	for i, id := range q.got {
+		got[i] = id
+	}
+	return map[string]any{"t": q.now().Unix(), "reqs": reqs, "got": got}
 }
 
-// keyLocked fingerprints the pending list, so Flush can tell whether anything changed.
+// maxGot bounds the strip-message ids carried in the inbox; the addon only needs the recent ones
+// to advance its per-section cache, and every slot body repeats the list.
+const maxGot = 20
+
+// Got records strip-message ids the server decoded, so the next slot write acknowledges them
+// to the addon (its delta cache advances only on acknowledged sends).
+func (q *Queue) Got(ids []int64) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for _, id := range ids {
+		q.got = append(q.got, id)
+	}
+	if len(q.got) > maxGot {
+		q.got = q.got[len(q.got)-maxGot:]
+	}
+}
+
+// keyLocked fingerprints the pending list and the acknowledged strip ids, so Flush can tell
+// whether anything changed (a new ack must reach the addon without waiting for the heartbeat).
 func (q *Queue) keyLocked() string {
-	data, _ := json.Marshal(q.pending)
+	data, _ := json.Marshal(struct {
+		P []map[string]any
+		G []int64
+	}{q.pending, q.got})
 	return string(data)
 }
 

@@ -1,0 +1,5 @@
+# tool wow_refresh variant=off
+# args: {"full":true,"sections":["bags","character"],"timeoutSeconds":5}
+# isError: true
+--- content[0] ---
+the live channel is off: the server was started without the screenshot watcher (it needs the game's Screenshots folder and the WowMcp live addon)

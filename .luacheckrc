@@ -4,6 +4,8 @@ std = "lua51"
 max_line_length = 160
 codes = true
 include_files = { "addon/WowMcp/*.lua", "addon/WowMcp/Sections/*.lua" }
+-- Vendored verbatim from wow-seer (zlib licence, see the file header): not held to our style.
+exclude_files = { "addon/WowMcp/LibDeflate.lua" }
 
 -- Globals written by the addon: SavedVariables and the slash command.
 globals = {
@@ -24,6 +26,9 @@ read_globals = {
     "Enum", "TooltipDataProcessor",
     -- frames and templates
     "BackdropTemplateMixin", "CreateFrame", "InterfaceOptionsFrame_OpenToCategory", "InterfaceOptions_AddCategory", "Settings", "DEFAULT_CHAT_FRAME", "GameTooltip", "InspectFrame", "Minimap", "UIParent",
+    "ActionStatus", "WorldFrame",
+    -- realtime strip channel (Strip.lua)
+    "C_CVar", "GetCVar", "GetPhysicalScreenSize", "Screenshot",
     -- constants
     "ATTACHMENTS_MAX_RECEIVE", "MAX_ACCOUNT_MACROS", "MAX_QUESTLOG_QUESTS", "NUM_BAG_SLOTS", "NUM_BANKBAGSLOTS",
     "NUM_PET_ACTION_SLOTS", "NUM_TOTAL_EQUIPPED_BAG_SLOTS",

@@ -1,0 +1,5 @@
+# tool wow_live variant=off
+# args: {"character":"Piekasz","section":"bags"}
+# isError: true
+--- content[0] ---
+the live channel is off: the server was started without the screenshot watcher (it needs the game's Screenshots folder and the WowMcp live addon)

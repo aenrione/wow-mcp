@@ -120,6 +120,8 @@ local function handleRequest(req)
         clearWaypoints()
     elseif kind == "focus" then
         focusMap(req)
+    elseif kind == "refresh" or kind == "refreshfull" then
+        if ns.Refresh then ns.Refresh.request(req) end
     end
 end
 
@@ -143,6 +145,10 @@ function Inbox.poll()
     if not ok or type(inbox) ~= "table" or type(inbox.t) ~= "number" then return end
     lastInboxAt = inbox.t
     if math.abs(time() - inbox.t) < ALIVE_FOR then aliveSince = GetTime() end
+    -- Strip sends the server confirmed: only now does the refresh delta cache advance (Refresh.lua).
+    for _, id in ipairs(type(inbox.got) == "table" and inbox.got or {}) do
+        if ns.Refresh then pcall(ns.Refresh.ack, id) end
+    end
     for _, req in ipairs(type(inbox.reqs) == "table" and inbox.reqs or {}) do
         local okReq, err = pcall(handleRequest, req)
         if not okReq then lastError = tostring(err) end
@@ -175,12 +181,18 @@ end
 
 local function collect()
     local handled = handledIds()
+    local refresh = ns.Refresh and ns.Refresh.status() or {}
     return {
         slotsTotal = slotCount,
         slotsUsed = nextSlot - 1,
         lastInboxAt = lastInboxAt,
         handledCount = handled and #handled or 0,
         lastError = lastError,
+        lastRefreshAt = refresh.lastRefreshAt,
+        lastRefreshSkipped = refresh.lastRefreshSkipped,
+        lastSendOk = refresh.lastSendOk,
+        lastSendMs = refresh.lastSendMs,
+        stripError = refresh.stripError,
     }
 end
 

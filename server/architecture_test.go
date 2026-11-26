@@ -174,8 +174,11 @@ func funcName(fn *ast.FuncDecl) string {
 	return fn.Name.Name
 }
 
+// TestArchitectureAddonFileSize: no addon file over maxAddonFileLines. The baseline exists only for
+// vendored libraries (LibDeflate.lua) that cannot be split; our own files never enter it.
 func TestArchitectureAddonFileSize(t *testing.T) {
 	root := filepath.Join("..", "addon", "WowMcp")
+	long := map[string]int{}
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".lua") {
 			return err
@@ -190,13 +193,15 @@ func TestArchitectureAddonFileSize(t *testing.T) {
 			lines++
 		}
 		if lines > maxAddonFileLines {
-			t.Errorf("%s has %d lines (limit %d): give each responsibility its own file", filepath.ToSlash(path), lines, maxAddonFileLines)
+			long[filepath.ToSlash(path)] = lines
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	checkBaseline(t, "addon_file_size.json", long,
+		"give each responsibility its own file: the limit is "+strconv.Itoa(maxAddonFileLines)+" lines (only vendored libraries may stay in the baseline)")
 }
 
 // checkBaseline fails when a value is above its baseline (a missing entry counts as zero) and, so that

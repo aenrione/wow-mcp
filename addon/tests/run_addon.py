@@ -10,8 +10,10 @@ Usage: python3 run_addon.py <modern|legacy|forever> <output_file>
        python3 run_addon.py lifecycle   (only the lifecycle from the real game; CB_ADDON_DIR = another addon copy)
 """
 
+import json
 import os
 import sys
+import zlib
 from pathlib import Path
 
 import lupa.lua51 as lua51
@@ -2567,6 +2569,205 @@ def check_inbox_slots() -> None:
     assert inbox["lastInboxAt"] == 1794760000 and inbox["lastError"] is None, dict(inbox)
 
 
+# Strip channel on top of the inbox mocks: a movable clock, a Screenshot counter, a PNG CVar and
+# textures that record position, size and colour so the test can decode the strip like the server.
+STRIP_STUB = INBOX_STUB + r"""
+C_AddOns.GetNumAddOns = function() return 8 end
+C_AddOns.GetAddOnInfo = function(i) return string.format("WowMcp_S%04d", i) end
+gameTime = 1000
+function GetTime() return gameTime end
+screenshots = 0
+function Screenshot() screenshots = screenshots + 1 end
+function GetPhysicalScreenSize() return 2560, 1440 end
+function GetCVar(name) if name == "screenshotFormat" then return "png" end end
+WorldFrame = {} -- only an anchor; it must not become the harness's first frame (the event frame)
+stripTextures = {}
+local baseCreateFrame = CreateFrame
+function CreateFrame(kind, name, parent, template)
+    local f = baseCreateFrame(kind, name, parent, template)
+    f.CreateTexture = function()
+        local t = baseCreateFrame("Texture")
+        t.placed, t.colored = false, false
+        t.SetColorTexture = function(self, r, g, b) self.colored, self.r, self.g, self.b = true, r, g, b end
+        t.SetPoint = function(self, _, _, _, x, y) self.placed, self.x, self.y = true, x, y end
+        t.SetSize = function(self, size) self.size = size end
+        stripTextures[#stripTextures + 1] = t
+        return t
+    end
+    return f
+end
+"""
+
+
+def pump_frames(g) -> None:
+    """One game frame: every OnUpdate script runs once (the strip builds, deflates and screenshots this way)."""
+    for f in list(g.frames.values()):
+        fn = f.scripts["OnUpdate"]
+        if fn is not None:
+            fn(f, 0.016)
+
+
+def decode_strip(g):
+    """Decodes the visible strip from the fake textures exactly like the server: sync, header, payload, Adler."""
+    cells = {}
+    for t in g.stripTextures.values():
+        if t["placed"] is True and t["colored"] is True and t["shown"] is True:
+            cells[(round(t["x"]), round(-t["y"]))] = (t["r"], t["g"], t["b"])
+    # Sync row (x = 4..64) and the start of the tail pattern alternate black/white blocks.
+    assert [round(cells[(4 * j, 0)][0]) for j in range(1, 17)] == [j % 2 == 0 and 1 or 0 for j in range(1, 17)]
+    # Header: 54 cells of 4 px from x = 68, one bit per channel, 20 bytes.
+    bits = []
+    for k in range(54):
+        r, gg, b = cells[(68 + 4 * k, 0)]
+        bits += [round(r), round(gg), round(b)]
+    header = [sum(bits[8 * i + j] << (7 - j) for j in range(8)) for i in range(20)]
+    assert header[0] == 87 and header[1] == 77, f"magic WM expected: {header[:2]}"
+    assert header[2] == 1 and header[3] == 2, f"version 1, 2 bits: {header[2:4]}"
+    cell = header[4]
+    msg = header[5] * 256 + header[6]
+    part, parts = header[7], header[8]
+    length = header[9] * 256 + header[10]
+    cols = header[11] * 256 + header[12]
+    rows = header[13]
+    assert cell == 1 and cols == 1024 and 1 <= rows <= 16, (cell, cols, rows)
+    assert header[18] == 0 and header[19] == sum(header[:19]) % 256, header
+    # Payload: 2-bit cells from (4, 8), row-major, 4 cells -> 3 bytes.
+    data, value = bytearray(), 0
+    for n in range(((length + 2) // 3) * 4):
+        r, gg, b = cells[(4 + (n % cols) * cell, 8 + (n // cols) * cell)]
+        value = (value << 6) | (round(r * 3) << 4) | (round(gg * 3) << 2) | round(b * 3)
+        if n % 4 == 3:
+            data += bytes([(value >> 16) & 255, (value >> 8) & 255, value & 255])
+            value = 0
+    data = bytes(data[:length])
+    a, bsum = 1, 0
+    for byte in data:
+        a = (a + byte) % 65521
+        bsum = (bsum + a) % 65521
+    assert (bsum, a) == (header[14] * 256 + header[15], header[16] * 256 + header[17]), "Adler mismatch"
+    return msg, part, parts, data
+
+
+def unpack_payload(data: bytes) -> bytes:
+    """'Y' framing: [3-byte BE length][raw-deflate slice]...; anything else is plain JSON."""
+    if data[:1] != b"Y":
+        return data
+    out, pos = b"", 1
+    while pos < len(data):
+        n = int.from_bytes(data[pos:pos + 3], "big")
+        out += zlib.decompress(data[pos + 3:pos + 3 + n], wbits=-15)
+        pos += 3 + n
+    return out
+
+
+def refresh_envelope(g):
+    """Runs the strip job to the Screenshot() call and decodes the sent envelope."""
+    before = g.screenshots
+    for _ in range(40):
+        if g.screenshots > before:
+            break
+        pump_frames(g)
+    assert g.screenshots == before + 1, "the refresh should take exactly one screenshot"
+    msg, part, parts, data = decode_strip(g)
+    assert (part, parts) == (1, 1), (part, parts)
+    return msg, json.loads(unpack_payload(data).decode("utf-8"))
+
+
+def check_refresh_strip() -> None:
+    """Forever fork: a refresh request dumps in memory and sends only changed sections out as a pixel strip."""
+    runtime, g, addon_ns = load_addon("forever", before_addon=STRIP_STUB)
+    on_event = event_dispatcher(g)
+    on_event(None, "PLAYER_LOGIN")
+    on_event(None, "PLAYER_ENTERING_WORLD")
+    g.timerAfter[1]["fn"]()
+    tick = g.tickers[1]["fn"]
+    # A small dump keeps the test to one part: only character, spells and inbox stay enabled.
+    runtime.execute(r"""
+        local _, ns = ...
+        local keep = { character = true, spells = true, inbox = true }
+        for _, name in ipairs(ns.Snapshot.sectionNames()) do
+            if not keep[name] then ns.Snapshot.setEnabled(name, false) end
+        end
+    """, "WowMcp", addon_ns)
+
+    def request(slot, body):
+        runtime.execute('slotBodies["WowMcp_S%04d"] = function() WowMcpInbox = %s end' % (slot, body))
+        tick()
+
+    # First refresh: the ack cache is empty, so everything (except the dump's own metadata) goes out.
+    request(1, '{ t = time(), reqs = { { id = 10, kind = "refresh" } } }')
+    assert not g.reloaded, "a refresh must never ReloadUI"
+    assert g.WowMcpDB["characters"]["Piekasz"]["reason"] == "refresh"
+    msg, envelope = refresh_envelope(g)
+    assert msg == g.WowMcpDB["stripMsgId"]
+    assert envelope["v"] == 1 and envelope["character"] == "Piekasz" and envelope["full"] is False
+    assert envelope["at"] == 1794760000
+    sections = set(envelope["sections"])
+    assert sections == {"errors", "disabledSections", "addonVersion", "character", "spells"}, sorted(sections)
+    assert envelope["sections"]["character"]["moneyCopper"] == 5212
+    # The strip hides ONE frame after the Screenshot() call (here it is still on screen).
+    visible = [i for i, f in g.frames.items() if f["kind"] == "Frame" and f["shown"] is True]
+    pump_frames(g)
+    hidden = [i for i in visible if g.frames[i]["shown"] is False]
+    assert len(hidden) == 1, "exactly the strip frame should hide one frame after Screenshot()"
+    addon_ns["Strip"]["OnScreenshot"](True)
+    assert addon_ns["Strip"]["Busy"]() is False
+    status = addon_ns["Refresh"]["status"]()
+    assert status["lastSendOk"] is True and status["stripError"] is None
+
+    # The server confirms the message id; a refresh in the same 5 s window is ignored outright.
+    request(2, '{ t = time(), got = { %d }, reqs = { { id = 11, kind = "refresh" } } }' % msg)
+    assert g.screenshots == 1 and status["lastRefreshSkipped"] is None
+    # Past the rate limit with nothing changed: the send is skipped and recorded.
+    g.gameTime = 1010
+    request(3, '{ t = time(), reqs = { { id = 12, kind = "refresh" } } }')
+    assert g.screenshots == 1 and status["lastRefreshSkipped"] is True
+    # A change in one section sends exactly that section.
+    g.gameTime = 1020
+    runtime.execute("function GetMoney() return 9999 end")
+    request(4, '{ t = time(), reqs = { { id = 13, kind = "refresh" } } }')
+    _, envelope = refresh_envelope(g)
+    assert set(envelope["sections"]) == {"character"}, sorted(envelope["sections"])
+    assert envelope["sections"]["character"]["moneyCopper"] == 9999 and envelope["full"] is False
+    addon_ns["Strip"]["OnScreenshot"](True)
+    # refreshfull ignores the cache and sends everything.
+    g.gameTime = 1030
+    request(5, '{ t = time(), reqs = { { id = 14, kind = "refreshfull" } } }')
+    _, envelope = refresh_envelope(g)
+    assert envelope["full"] is True
+    assert set(envelope["sections"]) == {"errors", "disabledSections", "addonVersion", "character", "spells"}
+    addon_ns["Strip"]["OnScreenshot"](True)
+
+    # The inbox dump section reports the channel.
+    g.SlashCmdList["WOWMCP"]("")
+    inbox = saved_character(g)["inbox"]
+    assert inbox["lastRefreshAt"] == 1794760000 and inbox["lastSendOk"] is True, dict(inbox)
+    assert inbox["lastSendMs"] >= 0 and inbox["stripError"] is None, dict(inbox)
+
+
+def check_json_encoder() -> None:
+    """Forever fork: the strip JSON encoder round-trips nested tables, unicode and numbers through Python json."""
+    runtime, g, addon_ns = load_addon("forever")
+    runtime.execute(r"""
+        jsonSample = {
+            name = "Mönjits ü", level = 20, gold = 52.123456789, big = 2 ^ 53, neg = -7,
+            flags = { true, false }, empty = {}, control = "a\tb\nc\001",
+            nested = { list = { 1, 2.5, "three" }, inf = math.huge, nan = 0 / 0 },
+        }
+    """)
+    parsed = json.loads(addon_ns["Json"]["encode"](g.jsonSample))
+    assert parsed["name"] == "Mönjits ü" and parsed["level"] == 20 and parsed["neg"] == -7
+    assert parsed["gold"] == 52.1235, "numbers with a fraction print as %.6g"
+    assert abs(parsed["big"] - 2 ** 53) < 2 ** 53 / 1e4, "integers from 2^53 fall back to %.6g"
+    assert parsed["control"] == "a\tb\nc\x01", "control characters escape as \\u00XX"
+    assert parsed["flags"] == [True, False] and parsed["empty"] == []
+    assert parsed["nested"]["list"] == [1, 2.5, "three"]
+    assert parsed["nested"]["inf"] is None and parsed["nested"]["nan"] is None
+    # Client "secrets" never reach the JSON.
+    runtime.execute('jsonSecret = { ok = 1, hidden = "classified" }; secretValues[jsonSecret.hidden] = true')
+    assert json.loads(addon_ns["Json"]["encode"](g.jsonSecret)) == {"ok": 1}
+
+
 def main() -> int:
     if len(sys.argv) < 2 or (sys.argv[1] != "lifecycle" and len(sys.argv) < 3):
         print("usage: run_addon.py modern|legacy|forever|dede <file.lua> or run_addon.py lifecycle")
@@ -2963,6 +3164,8 @@ def main() -> int:
         check_rxp_section()
         check_companions_section()
         check_inbox_slots()
+        check_json_encoder()
+        check_refresh_strip()
         check_real_lifecycle()
         print("lifecycle from the real game: OK")
     return 0

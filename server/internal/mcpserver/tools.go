@@ -164,6 +164,7 @@ func (s *service) tools() []tool {
 		s.extrasTools(s.Extras, s.ExportDir),
 		s.remoteTools(),
 		s.wikiTools(),
+		s.liveTools(),
 	)
 }
 

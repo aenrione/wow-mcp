@@ -86,6 +86,7 @@ var expectedWriters = map[string]bool{
 	"wow_map_focus":       true,
 	"wow_waypoints_clear": true,
 	"wow_wiki_write":      true,
+	"wow_refresh":         true,
 }
 
 func TestPickPathAndLimit(t *testing.T) {

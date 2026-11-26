@@ -800,6 +800,33 @@
       "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "Live section"
+    },
+    "description": "One section of the live state the addon streams through screenshots (a realtime sibling of wow_section): the section's data with its own age in seconds (the addon sends deltas, so each section has the time it last changed) and the age of the last live payload. When the data is too old or the section is missing, ask for it with wow_refresh.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "character": {
+          "description": "character name; empty = the character of the most recent live payload",
+          "type": "string"
+        },
+        "section": {
+          "description": "live section name, e.g. character, bags, quests",
+          "type": "string"
+        }
+      },
+      "required": [
+        "section"
+      ],
+      "type": "object"
+    },
+    "name": "wow_live"
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "Mail"
     },
     "description": "The mailbox from the last time it was opened: sender, subject, gold, cash on delivery (COD), attachments, whether the letter was returned and when it expires (expiringSoon = less than 3 days). The capturedAgeMinutes field says how long ago the mailbox was open. Data comes from the last /reload or logout in game; the snapshot.ageMinutes field says how many minutes old it is.",
@@ -1182,6 +1209,41 @@
       "type": "object"
     },
     "name": "wow_recipes"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Request live data"
+    },
+    "description": "Asks the addon in game for fresh live data and waits for it to arrive: it queues a request through the WowMcp_S* slot channel (sections narrows it, full=true asks for a complete snapshot instead of a delta of changes) and polls the live state up to timeoutSeconds (default 20, at most 60). fresh=true means a payload arrived after the request; read it with wow_live. the addon in game polls a slot every ~15 s, so the request takes effect within about that time. No gameplay automation: the addon only paints pixels and takes a screenshot.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "full": {
+          "description": "true = ask for a full snapshot of every section instead of a delta of changes",
+          "type": "boolean"
+        },
+        "sections": {
+          "description": "only collect these sections (e.g. bags, character); empty = whatever the addon finds changed",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "timeoutSeconds": {
+          "description": "how long to wait for the live payload, in seconds; default 20, at most 60",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "wow_refresh"
   },
   {
     "annotations": {
