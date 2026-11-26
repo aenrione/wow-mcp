@@ -226,6 +226,122 @@
       "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "Read the agent board"
+    },
+    "description": "The current agent board as the addon recorded it in the last dump: count, byCategory and the entries (id, category, title, done). Use it to see what you already posted with wow_board_post and which task entries the player has ticked done. Empty until something is posted and the player runs /mcp reload. Data comes from the last /reload or logout in game; the snapshot.ageMinutes field says how many minutes old it is.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "name": "wow_board"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Clear the agent board"
+    },
+    "description": "Asks the addon in game to remove board entries: ids removes those entries, no ids clears the whole board. It writes ONLY the WowMcp_S* request-slot addon bodies under Interface/AddOns; the addon in game polls a slot every ~15 s, so the request takes effect within about that time.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ids": {
+          "description": "optional entry ids to remove; omit to clear the whole board",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "name": "wow_board_clear"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Post to the agent board"
+    },
+    "description": "Posts notes, tasks, routes or a sell list to the player's in-game agent board, which the player opens with /mcp board. Each entry has a category (sell, task, route, note), a title, an optional body, optional item IDs rendered as clickable item links, and optional map coordinates (mapID + x,y in 0..100) rendered as a clickable link that drops a TomTom waypoint. Task entries get a tick box the player marks done; read it back with wow_board. Up to 25 entries per call. It writes ONLY the WowMcp_S* request-slot addon bodies under Interface/AddOns; the addon in game polls a slot every ~15 s, so the request takes effect within about that time.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "description": "required list of board entries to post (max 25 per call)",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "body": {
+                "description": "optional longer description shown under the title",
+                "type": "string"
+              },
+              "category": {
+                "description": "required category of the entry: one of sell, task, route, note",
+                "type": "string"
+              },
+              "items": {
+                "description": "optional item IDs rendered as clickable item links in the entry",
+                "items": {
+                  "type": "integer"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              },
+              "mapID": {
+                "description": "optional uiMapID for a clickable coordinate link that drops a TomTom waypoint (a zone name is NOT resolved here)",
+                "type": "integer"
+              },
+              "title": {
+                "description": "required short title line shown in the board",
+                "type": "string"
+              },
+              "waypointTitle": {
+                "description": "optional label for the TomTom waypoint of the coordinate link",
+                "type": "string"
+              },
+              "x": {
+                "description": "optional map X coordinate in 0..100 (required when mapID is given)",
+                "type": "number"
+              },
+              "y": {
+                "description": "optional map Y coordinate in 0..100 (required when mapID is given)",
+                "type": "number"
+              }
+            },
+            "required": [
+              "category",
+              "title"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "type": "object"
+    },
+    "name": "wow_board_post"
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "Buffs and debuffs"
     },
     "description": "The character's active effects (auras): buffs and debuffs with stack counts, and a list of missing typical class buffs (e.g. Hunter's Aspect, Mage's Arcane Intellect, Paladin's Blessing, no pet while Call Pet is known). The missing-buff warning is a heuristic: it appears only when the character knows the spell and none of the effects of its group is among the auras. The server gives the time left on an aura only when the snapshot contains its end time (addon 0.7.0+ saves expiresAt when the client gives it; otherwise the response says so in timingNote). State at the time of saving. Data comes from the last /reload or logout in game; the snapshot.ageMinutes field says how many minutes old it is.",

@@ -8,6 +8,10 @@
 -- A table with t[1] (or nothing at all) becomes an array, anything else an object with string
 -- keys. Integers below 2^53 print exactly, other numbers as %.6g; NaN, infinities, client
 -- "secrets" (issecretvalue) and unknown types become null. Control characters escape as \u00XX.
+--
+-- On the Forever client (1.60.1) string.format("%d", n) coerces to a signed 32-bit int and errors
+-- "integer overflow" for |n| >= 2^31 (item/quest ids, GUID fragments, Profiteer prices exceed it),
+-- so integers outside the int32 range go through "%.0f", which formats the exact value as a float.
 
 local _, ns = ...
 
@@ -57,7 +61,11 @@ encode = function(v, out)
         if v ~= v or v == math.huge or v == -math.huge then
             out[#out + 1] = "null"
         elseif v == math.floor(v) and math.abs(v) < 2 ^ 53 then
-            out[#out + 1] = string.format("%d", v)
+            if math.abs(v) < 2 ^ 31 then
+                out[#out + 1] = string.format("%d", v)
+            else
+                out[#out + 1] = string.format("%.0f", v)
+            end
         else
             out[#out + 1] = string.format("%.6g", v)
         end

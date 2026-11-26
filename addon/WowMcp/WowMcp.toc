@@ -78,6 +78,8 @@ Sections\Note.lua
 
 # Player UI.
 Panel.lua
+BoardEntry.lua
+Board.lua
 Keybind.lua
 MinimapButton.lua
 AuctionTooltip.lua

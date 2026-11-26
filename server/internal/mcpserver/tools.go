@@ -165,6 +165,7 @@ func (s *service) tools() []tool {
 		s.remoteTools(),
 		s.wikiTools(),
 		s.liveTools(),
+		s.boardTools(),
 	)
 }
 

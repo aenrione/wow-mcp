@@ -85,7 +85,8 @@ const instructions = "The tools read World of Warcraft: Forever character state 
 	"wow_export_csv (writes a CSV of prices, ledger, inventory or history in the server's export directory); " +
 	"remote requests: wow_waypoint_set, wow_map_focus and wow_waypoints_clear queue a request the in-game addon picks up within ~15 s and executes through TomTom/OpenMap (wow_slots_status shows the channel); " +
 	"live data without a /reload: wow_refresh asks the addon for a fresh snapshot (only changed or requested sections travel; expect a few seconds) and wow_live reads a section of it with its own age — prefer these over a stale file snapshot; " +
-	"wiki: wow_wiki_list, wow_wiki_read, wow_wiki_search and wow_wiki_write keep the assistant's own min-maxing notes as markdown in the server's directory. " +
+	"wiki: wow_wiki_list, wow_wiki_read, wow_wiki_search and wow_wiki_write keep the assistant's own min-maxing notes as markdown in the server's directory; " +
+	"player-facing board: wow_board_post puts notes/tasks/routes (with clickable item and waypoint references) on an in-game panel the player opens with /mcp board, wow_board_clear removes them and wow_board reads back what is posted and what the player ticked done. " +
 	"Ready-made prompts: session_plan, trainer_shopping, what_to_sell, gear_upgrades, session_summary, account_overview, " +
 	"profession_progress, talent_planning, what_to_auction, dungeon_finder, before_logout, first_run, pet_care, week_in_game. " +
 	"Answer in the user's language and keep in-game names (items, spells, zones) in English. " +

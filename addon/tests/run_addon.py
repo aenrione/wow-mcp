@@ -2569,6 +2569,59 @@ def check_inbox_slots() -> None:
     assert inbox["lastInboxAt"] == 1794760000 and inbox["lastError"] is None, dict(inbox)
 
 
+def check_board_slots() -> None:
+    """Forever fork: a board_post request fills WowMcpDB.board and the dump "board" section; a done tick persists
+    and a board_clear empties it. The posts ride the same request-slot channel as the other inbox kinds."""
+    runtime, g, addon_ns = load_addon("forever", before_addon=INBOX_STUB)
+    on_event = event_dispatcher(g)
+    on_event(None, "PLAYER_LOGIN")
+    on_event(None, "PLAYER_ENTERING_WORLD")
+    g.timerAfter[1]["fn"]()
+    tick = g.tickers[1]["fn"]
+    runtime.execute(r"""
+        slotBodies["WowMcp_S0001"] = function()
+            WowMcpInbox = { t = time(), reqs = { { id = 20, kind = "board_post", entries = {
+                { category = "task", title = "Turn in Murkdeep" },
+                { category = "sell", title = "Vendor greys", body = "bags are full", items = { 2589, 7005 } },
+                { category = "route", title = "To Auberdine", coords = { mapID = 1439, x = 37.3, y = 43.6, title = "FP" } },
+            } } } }
+        end
+        slotBodies["WowMcp_S0002"] = function()
+            WowMcpInbox = { t = time(), reqs = { { id = 21, kind = "board_clear" } } }
+        end
+    """)
+    tick()
+    board = g.WowMcpDB["board"]
+    order = [str(i) for i in values(board["order"])]
+    assert len(order) == 3, order
+    # The dump reports the board section grouped and bounded.
+    g.SlashCmdList["WOWMCP"]("")
+    snapshot = saved_character(g)
+    assert not values(snapshot["errors"]), values(snapshot["errors"])
+    section = snapshot["board"]
+    assert section["count"] == 3, dict(section)
+    assert (section["byCategory"]["task"], section["byCategory"]["sell"], section["byCategory"]["route"]) == (1, 1, 1), dict(section["byCategory"])
+    entries = values(section["entries"])
+    task = next(e for e in entries if e["category"] == "task")
+    assert task["title"] == "Turn in Murkdeep" and task["done"] is False, dict(task)
+    # Item ids and coordinates are kept on the stored entry.
+    sell = board["entries"][next(e["id"] for e in entries if e["category"] == "sell")]
+    assert [int(i) for i in values(sell["items"])] == [2589, 7005], dict(sell)
+    route = board["entries"][next(e["id"] for e in entries if e["category"] == "route")]
+    assert (route["coords"]["mapID"], route["coords"]["title"]) == (1439, "FP"), dict(route["coords"])
+    # A done tick persists.
+    addon_ns.Board.setDone(task["id"], True)
+    assert g.WowMcpDB["board"]["entries"][task["id"]]["done"] is True
+    g.SlashCmdList["WOWMCP"]("")
+    snapshot = saved_character(g)
+    assert next(e for e in values(snapshot["board"]["entries"]) if e["id"] == task["id"])["done"] is True
+    # A board_clear with no ids empties the board; the section then disappears from the dump.
+    tick()
+    assert len(values(g.WowMcpDB["board"]["order"])) == 0 and not values(g.WowMcpDB["board"]["entries"])
+    g.SlashCmdList["WOWMCP"]("")
+    assert saved_character(g)["board"] is None
+
+
 # Strip channel on top of the inbox mocks: a movable clock, a Screenshot counter, a PNG CVar and
 # textures that record position, size and colour so the test can decode the strip like the server.
 STRIP_STUB = INBOX_STUB + r"""
@@ -3164,6 +3217,7 @@ def main() -> int:
         check_rxp_section()
         check_companions_section()
         check_inbox_slots()
+        check_board_slots()
         check_json_encoder()
         check_refresh_strip()
         check_real_lifecycle()

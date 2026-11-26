@@ -1,0 +1,5 @@
+# tool wow_board_post variant=off
+# args: {"entries":[{"category":"sell","items":[2589],"mapID":1429,"title":"Golden","x":44.2,"y":61.1}]}
+# isError: true
+--- content[0] ---
+the slot channel is off: the server was started without the slot addons configured (install them with the install script's --slots step and wire --addons-dir)

@@ -87,6 +87,8 @@ var expectedWriters = map[string]bool{
 	"wow_waypoints_clear": true,
 	"wow_wiki_write":      true,
 	"wow_refresh":         true,
+	"wow_board_post":      true,
+	"wow_board_clear":     true,
 }
 
 func TestPickPathAndLimit(t *testing.T) {

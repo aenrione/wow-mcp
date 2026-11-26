@@ -1,0 +1,15 @@
+# tool wow_board variant=default
+# args: {}
+# isError: false
+--- content[0] ---
+{
+  "board": {
+    "count": 0,
+    "note": "no board entries; an agent posts with wow_board_post"
+  },
+  "snapshot": {
+    "ageMinutes": 30,
+    "character": "Piekasz",
+    "dumpedAt": "2026-11-15 16:50:00"
+  }
+}

@@ -121,6 +121,9 @@ func goldenCases() []goldenCase {
 		tc("wow_wiki_write", "off", args{"slug": "gold-routes", "content": "# Gold routes"}),
 		tc("wow_refresh", "off", args{"timeoutSeconds": 5, "sections": []any{"bags", "character"}, "full": true}),
 		tc("wow_live", "off", args{"section": "bags", "character": charKnown}),
+		tc("wow_board_post", "off", args{"entries": []any{map[string]any{"category": "sell", "title": "Golden", "items": []any{2589}, "mapID": 1429, "x": 44.2, "y": 61.1}}}),
+		tc("wow_board_clear", "off", args{"ids": []any{"e1", "e2"}}),
+		tc("wow_board", "default", args{}),
 	)
 
 	add(

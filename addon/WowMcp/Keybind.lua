@@ -8,7 +8,12 @@ local _, ns = ...
 
 BINDING_HEADER_WOWMCP = "WowMcp"
 BINDING_NAME_WOWMCP_SAVE = "Save character state (dump and /reload)"
+BINDING_NAME_WOWMCP_TOGGLEBOARD = "Toggle the agent board"
 
 function WowMcp_SaveAndReload()
     ns.Panel.saveAndReload("keybind")
+end
+
+function WowMcp_ToggleBoard()
+    if ns.Board then ns.Board.toggle() end
 end

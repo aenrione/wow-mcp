@@ -122,6 +122,10 @@ local function handleRequest(req)
         focusMap(req)
     elseif kind == "refresh" or kind == "refreshfull" then
         if ns.Refresh then ns.Refresh.request(req) end
+    elseif kind == "board_post" then
+        if ns.Board then ns.Board.post(req.entries) end
+    elseif kind == "board_clear" then
+        if ns.Board then ns.Board.clear(req.ids) end
     end
 end
 

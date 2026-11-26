@@ -2,4 +2,7 @@
     <Binding name="WOWMCP_SAVE" header="WOWMCP" category="ADDONS">
         WowMcp_SaveAndReload()
     </Binding>
+    <Binding name="WOWMCP_TOGGLEBOARD" header="WOWMCP" category="ADDONS">
+        WowMcp_ToggleBoard()
+    </Binding>
 </Bindings>
